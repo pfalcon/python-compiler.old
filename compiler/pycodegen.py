@@ -114,7 +114,7 @@ class Module(AbstractCompileMode):
         gen = ModuleCodeGenerator(tree)
         if display:
             import pprint
-            print pprint.pprint(tree)
+            pprint.pprint(tree)
         self.code = gen.getCode()
 
     def dump(self, f):
