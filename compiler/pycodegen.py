@@ -4,7 +4,7 @@ import os
 import marshal
 import struct
 import sys
-from cStringIO import StringIO
+from io import StringIO
 
 from compiler import ast, parse, walk, syntax
 from compiler import pyassem, misc, future, symbols
