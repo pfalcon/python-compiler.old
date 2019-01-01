@@ -496,6 +496,7 @@ class PyFlowGraph(FlowGraph):
 
     # similarly for other opcodes...
 
+    name = obj = opname = None
     for name, obj in locals().items():
         if name[:9] == "_convert_":
             opname = name[9:]
