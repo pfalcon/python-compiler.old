@@ -9,6 +9,17 @@ from compiler import misc
 from compiler.consts \
      import CO_OPTIMIZED, CO_NEWLOCALS, CO_VARARGS, CO_VARKEYWORDS
 
+VERSION = sys.version_info[0]
+if VERSION < 3:
+    def CodeType(*args):
+        args = list(args)
+        del args[1]
+        return types.CodeType(*args)
+else:
+    CodeType = types.CodeType
+    long = int
+
+
 class FlowGraph:
     def __init__(self):
         self.current = self.entry = Block()
@@ -538,7 +549,7 @@ class PyFlowGraph(FlowGraph):
         argcount = self.argcount
         if self.flags & CO_VARKEYWORDS:
             argcount = argcount - 1
-        return types.CodeType(argcount, nlocals, self.stacksize, self.flags,
+        return CodeType(argcount, 0, nlocals, self.stacksize, self.flags,
                         self.lnotab.getCode(), self.getConsts(),
                         tuple(self.names), tuple(self.varnames),
                         self.filename, self.name, self.lnotab.firstline,
