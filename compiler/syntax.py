@@ -8,6 +8,7 @@ The compiler package catches some errors in the transformer module.
 But it seems clearer to write checkers that use the AST to detect
 errors.
 """
+from __future__ import print_function
 
 from compiler import ast, walk
 
@@ -32,7 +33,7 @@ class SyntaxErrorChecker:
     def error(self, node, msg):
         self.errors = self.errors + 1
         if self.multi is not None:
-            print "%s:%s: %s" % (node.filename, node.lineno, msg)
+            print("%s:%s: %s" % (node.filename, node.lineno, msg))
         else:
             raise SyntaxError("%s (%s:%s)" % (msg, node.filename, node.lineno))
 
