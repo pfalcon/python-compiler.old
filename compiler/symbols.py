@@ -10,6 +10,10 @@ import types
 
 import sys
 
+VERSION = sys.version_info[0]
+if VERSION >= 3:
+    long = int
+
 MANGLE_LEN = 256
 
 class Scope:
@@ -390,7 +394,7 @@ class SymbolVisitor:
 
     # prune if statements if tests are false
 
-    _const_types = types.StringType, types.IntType, types.FloatType
+    _const_types = str, bytes, int, long, float
 
     def visitIf(self, node, scope):
         for test, body in node.tests:
