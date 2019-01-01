@@ -1454,55 +1454,6 @@ _cmp_types = {
     token.NOTEQUAL : '!=',
     }
 
-_legal_node_types = [
-    symbol.funcdef,
-    symbol.classdef,
-    symbol.stmt,
-    symbol.small_stmt,
-    symbol.flow_stmt,
-    symbol.simple_stmt,
-    symbol.compound_stmt,
-    symbol.expr_stmt,
-    symbol.print_stmt,
-    symbol.del_stmt,
-    symbol.pass_stmt,
-    symbol.break_stmt,
-    symbol.continue_stmt,
-    symbol.return_stmt,
-    symbol.raise_stmt,
-    symbol.import_stmt,
-    symbol.global_stmt,
-    symbol.exec_stmt,
-    symbol.assert_stmt,
-    symbol.if_stmt,
-    symbol.while_stmt,
-    symbol.for_stmt,
-    symbol.try_stmt,
-    symbol.with_stmt,
-    symbol.suite,
-    symbol.testlist,
-    symbol.testlist_safe,
-    symbol.test,
-    symbol.and_test,
-    symbol.not_test,
-    symbol.comparison,
-    symbol.exprlist,
-    symbol.expr,
-    symbol.xor_expr,
-    symbol.and_expr,
-    symbol.shift_expr,
-    symbol.arith_expr,
-    symbol.term,
-    symbol.factor,
-    symbol.power,
-    symbol.atom,
-    ]
-
-if hasattr(symbol, 'yield_stmt'):
-    _legal_node_types.append(symbol.yield_stmt)
-if hasattr(symbol, 'yield_expr'):
-    _legal_node_types.append(symbol.yield_expr)
-
 _assign_types = [
     symbol.test,
     symbol.or_test,
