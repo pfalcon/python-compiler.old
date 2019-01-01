@@ -111,11 +111,12 @@ class Transformer:
         self._atom_dispatch = {token.LPAR: self.atom_lpar,
                                token.LSQB: self.atom_lsqb,
                                token.LBRACE: self.atom_lbrace,
-                               token.BACKQUOTE: self.atom_backquote,
                                token.NUMBER: self.atom_number,
                                token.STRING: self.atom_string,
                                token.NAME: self.atom_name,
                                }
+        if hasattr(token, "BACKQUOTE"):
+            self._atom_dispatch[token.BACKQUOTE] = self.atom_backquote
         self.encoding = None
 
     def transform(self, tree):
@@ -1426,7 +1427,6 @@ class Transformer:
 _doc_nodes = [
     symbol.expr_stmt,
     symbol.testlist,
-    symbol.testlist_safe,
     symbol.test,
     symbol.or_test,
     symbol.and_test,
@@ -1441,6 +1441,9 @@ _doc_nodes = [
     symbol.factor,
     symbol.power,
     ]
+
+if hasattr(symbol, "testlist_safe"):
+    _doc_nodes.append(symbol.testlist_safe)
 
 # comp_op: '<' | '>' | '=' | '>=' | '<=' | '<>' | '!=' | '=='
 #             | 'in' | 'not' 'in' | 'is' | 'is' 'not'
