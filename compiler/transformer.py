@@ -24,6 +24,7 @@ parseFile(path) -> AST
 # This module is provided under a BSD-ish license. See
 #   http://www.opensource.org/licenses/bsd-license.html
 # and replace OWNER, ORGANIZATION, and YEAR as appropriate.
+from __future__ import print_function
 
 from compiler.ast import *
 import parser
@@ -85,7 +86,7 @@ def Node(*args):
         try:
             return nodes[kind](*args[1:])
         except TypeError:
-            print nodes[kind], len(args), args
+            print(nodes[kind], len(args), args)
             raise
     else:
         raise WalkerError("Can't find appropriate Node type: %s" % str(args))
