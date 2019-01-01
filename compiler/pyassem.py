@@ -611,7 +611,7 @@ class LineAddrTable:
 
     def addCode(self, *args):
         for arg in args:
-            self.code.append(chr(arg))
+            self.code.append(arg)
         self.codeOffset = self.codeOffset + len(args)
 
     def nextLine(self, lineno):
@@ -647,10 +647,10 @@ class LineAddrTable:
                 self.lastoff = self.codeOffset
 
     def getCode(self):
-        return ''.join(self.code)
+        return bytes(self.code)
 
     def getTable(self):
-        return ''.join(map(chr, self.lnotab))
+        return bytes(self.lnotab)
 
 class StackDepthTracker:
     # XXX 1. need to keep track of stack depth on jumps
