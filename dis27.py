@@ -58,6 +58,8 @@ def distb(tb=None):
         while tb.tb_next: tb = tb.tb_next
     disassemble(tb.tb_frame.f_code, tb.tb_lasti)
 
+const_repr = repr
+
 def disassemble(co, lasti=-1):
     """Disassemble a code object."""
     code = co.co_code
@@ -92,7 +94,7 @@ def disassemble(co, lasti=-1):
                 extended_arg = oparg*65536L
             print repr(oparg).rjust(5),
             if op in hasconst:
-                print '(' + repr(co.co_consts[oparg]) + ')',
+                print '(' + const_repr(co.co_consts[oparg]) + ')',
             elif op in hasname:
                 print '(' + co.co_names[oparg] + ')',
             elif op in hasjrel:
