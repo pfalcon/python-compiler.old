@@ -527,7 +527,7 @@ class For(Node):
     def __repr__(self):
         return "For(%s, %s, %s, %s)" % (repr(self.assign), repr(self.list), repr(self.body), repr(self.else_))
 
-class From(Node):
+class ImportFrom(Node):
     def __init__(self, modname, names, level, lineno=None):
         self.modname = modname
         self.names = names
@@ -541,7 +541,7 @@ class From(Node):
         return ()
 
     def __repr__(self):
-        return "From(%s, %s, %s)" % (repr(self.modname), repr(self.names), repr(self.level))
+        return "ImportFrom(%s, %s, %s)" % (repr(self.modname), repr(self.names), repr(self.level))
 
 class Function(Node):
     def __init__(self, decorators, name, argnames, defaults, flags, doc, code, lineno=None):
