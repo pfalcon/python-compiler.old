@@ -417,23 +417,23 @@ class CodeGenerator:
     # The next few implement control-flow statements
 
     def visitIf(self, node):
+        test = node.test
+        if is_constant_false(test):
+            # XXX will need to check generator stuff here
+            return
         end = self.newBlock()
-        numtests = len(node.tests)
-        for i in range(numtests):
-            test, suite = node.tests[i]
-            if is_constant_false(test):
-                # XXX will need to check generator stuff here
-                continue
-            self.set_lineno(test)
-            self.visit(test)
-            nextTest = self.newBlock()
-            self.emit('POP_JUMP_IF_FALSE', nextTest)
-            self.nextBlock()
-            self.visit(suite)
+        self.set_lineno(test)
+        self.visit(test)
+        orelse = None
+        if node.orelse:
+            orelse = self.newBlock()
+        self.emit('POP_JUMP_IF_FALSE', orelse or end)
+        self.nextBlock()
+        self.visit(node.body)
+        if node.orelse:
             self.emit('JUMP_FORWARD', end)
-            self.startBlock(nextTest)
-        if node.else_:
-            self.visit(node.else_)
+            self.startBlock(orelse)
+            self.visit(node.orelse)
         self.nextBlock(end)
 
     def visitWhile(self, node):
