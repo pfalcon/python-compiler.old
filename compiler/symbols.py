@@ -1,7 +1,7 @@
 """Module symbol-table generator"""
 from __future__ import print_function
 
-from compiler import ast
+import ast
 from compiler.consts import SC_LOCAL, SC_GLOBAL_IMPLICIT, SC_GLOBAL_EXPLICIT, \
     SC_FREE, SC_CELL, SC_UNKNOWN
 from compiler.misc import mangle
@@ -223,34 +223,41 @@ class SymbolVisitor:
 
     def visitModule(self, node):
         scope = self.module = self.scopes[node] = ModuleScope()
-        self.visit(node.node, scope)
+        self.visit(node.body, scope)
 
     visitExpression = visitModule
 
-    def visitFunction(self, node, parent):
-        if node.decorators:
-            self.visit(node.decorators, parent)
+    def visitFunctionDef(self, node, parent):
+        if node.decorator_list:
+            self.visit(node.decorator_list, parent)
         parent.add_def(node.name)
-        for n in node.defaults:
+        for n in node.args.defaults:
             self.visit(n, parent)
         scope = FunctionScope(node.name, self.module, self.klass)
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
         self.scopes[node] = scope
-        self._do_args(scope, node.argnames)
-        self.visit(node.code, scope)
+        self._do_args(scope, node.args)
+        self.visit(node.body, scope)
         self.handle_free_vars(scope, parent)
 
-    def visitGenExpr(self, node, parent):
+    def visitGeneratorExp(self, node, parent):
         scope = GenExprScope(self.module, self.klass);
         if parent.nested or isinstance(parent, FunctionScope) \
                 or isinstance(parent, GenExprScope):
             scope.nested = 1
 
         self.scopes[node] = scope
-        self.visit(node.code, scope)
+        for comp in node.generators:
+            self.visit(comp, scope)
 
         self.handle_free_vars(scope, parent)
+
+    def visitcomprehension(self, node, scope):
+        self.visit(node.target, scope, 1)
+        self.visit(node.iter, scope)
+        for if_ in node.ifs:
+            self.visit(if_, scope)
 
     def visitGenExprInner(self, node, scope):
         for genfor in node.quals:
@@ -273,41 +280,44 @@ class SymbolVisitor:
         # any code that has a lambda on the left-hand side.
         assert not assign
 
-        for n in node.defaults:
+        for n in node.args.defaults:
             self.visit(n, parent)
         scope = LambdaScope(self.module, self.klass)
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
         self.scopes[node] = scope
-        self._do_args(scope, node.argnames)
-        self.visit(node.code, scope)
+        self._do_args(scope, node.args)
+        self.visit(node.body, scope)
         self.handle_free_vars(scope, parent)
 
     def _do_args(self, scope, args):
-        for name in args:
-            if type(name) == types.TupleType:
-                self._do_args(scope, name)
-            else:
-                scope.add_param(name)
+        for arg in args.args:
+            name = arg.arg
+            scope.add_param(name)
+        if args.vararg:
+            scope.add_param(args.vararg.arg)
+        if args.kwarg:
+            scope.add_param(args.kwarg.arg)
 
     def handle_free_vars(self, scope, parent):
         parent.add_child(scope)
         scope.handle_children()
 
-    def visitClass(self, node, parent):
+    def visitClassDef(self, node, parent):
         parent.add_def(node.name)
         for n in node.bases:
             self.visit(n, parent)
         scope = ClassScope(node.name, self.module)
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
-        if node.doc is not None:
+        doc = ast.get_docstring(node)
+        if doc is not None:
             scope.add_def('__doc__')
         scope.add_def('__module__')
         self.scopes[node] = scope
         prev = self.klass
         self.klass = node.name
-        self.visit(node.code, scope)
+        self.visit(node.body, scope)
         self.klass = prev
         self.handle_free_vars(scope, parent)
 
@@ -319,31 +329,32 @@ class SymbolVisitor:
 
     def visitName(self, node, scope, assign=0):
         if assign:
-            scope.add_def(node.name)
+            scope.add_def(node.id)
         else:
-            scope.add_use(node.name)
+            scope.add_use(node.id)
 
     # operations that bind new names
 
     def visitFor(self, node, scope):
-        self.visit(node.assign, scope, 1)
-        self.visit(node.list, scope)
+        self.visit(node.target, scope, 1)
+        self.visit(node.iter, scope)
         self.visit(node.body, scope)
-        if node.else_:
-            self.visit(node.else_, scope)
+        if node.orelse:
+            self.visit(node.orelse, scope)
 
-    def visitFrom(self, node, scope):
-        for name, asname in node.names:
-            if name == "*":
+    def visitImportFrom(self, node, scope):
+        for alias in node.names:
+            if alias.name == "*":
                 continue
-            scope.add_def(asname or name)
+            scope.add_def(alias.asname or alias.name)
 
     def visitImport(self, node, scope):
-        for name, asname in node.names:
+        for alias in node.names:
+            name = alias.name
             i = name.find(".")
             if i > -1:
                 name = name[:i]
-            scope.add_def(asname or name)
+            scope.add_def(alias.asname or name)
 
     def visitGlobal(self, node, scope):
         for name in node.names:
@@ -362,9 +373,9 @@ class SymbolVisitor:
         visitor handles these nodes specially; they do not propagate
         the assign flag to their children.
         """
-        for n in node.nodes:
+        for n in node.targets:
             self.visit(n, scope, 1)
-        self.visit(node.expr, scope)
+        self.visit(node.value, scope)
 
     def visitAssName(self, node, scope, assign=1):
         scope.add_def(node.name)
@@ -373,45 +384,41 @@ class SymbolVisitor:
         self.visit(node.expr, scope, 0)
 
     def visitSubscript(self, node, scope, assign=0):
-        self.visit(node.expr, scope, 0)
-        for n in node.subs:
-            self.visit(n, scope, 0)
+        self.visit(node.value, scope, 0)
+        self.visit(node.slice, scope, 0)
 
     def visitSlice(self, node, scope, assign=0):
-        self.visit(node.expr, scope, 0)
         if node.lower:
             self.visit(node.lower, scope, 0)
         if node.upper:
             self.visit(node.upper, scope, 0)
+        if node.step:
+            self.visit(node.step, scope, 0)
 
     def visitAugAssign(self, node, scope):
         # If the LHS is a name, then this counts as assignment.
         # Otherwise, it's just use.
-        self.visit(node.node, scope)
-        if isinstance(node.node, ast.Name):
-            self.visit(node.node, scope, 1) # XXX worry about this
-        self.visit(node.expr, scope)
+        self.visit(node.target, scope)
+        if isinstance(node.target, ast.Name):
+            self.visit(node.target, scope, 1) # XXX worry about this
+        self.visit(node.value, scope)
 
     # prune if statements if tests are false
 
     _const_types = str, bytes, int, long, float
 
     def visitIf(self, node, scope):
-        for test, body in node.tests:
-            if isinstance(test, ast.Const):
-                if type(test.value) in self._const_types:
-                    if not test.value:
-                        continue
-            self.visit(test, scope)
-            self.visit(body, scope)
-        if node.else_:
-            self.visit(node.else_, scope)
+        self.visit(node.test, scope)
+        self.visit(node.body, scope)
+        if node.orelse:
+            self.visit(node.orelse, scope)
 
     # a yield statement signals a generator
 
     def visitYield(self, node, scope):
         scope.generator = 1
-        self.visit(node.value, scope)
+        if node.value:
+            self.visit(node.value, scope)
 
 def list_eq(l1, l2):
     return sorted(l1) == sorted(l2)
