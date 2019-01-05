@@ -1287,15 +1287,24 @@ class CodeGenerator:
             num += 1
         self.emit('BUILD_SLICE', num)
 
-    def visitDict(self, node):
+    # Create dict item by item. Saves interp stack size at the expense
+    # of bytecode size/speed.
+    def visitDict_by_one(self, node):
         self.set_lineno(node)
         self.emit('BUILD_MAP', 0)
-        for k, v in node.items:
+        for k, v in zip(node.keys, node.values):
             self.emit('DUP_TOP')
             self.visit(k)
             self.visit(v)
             self.emit('ROT_THREE')
             self.emit('STORE_SUBSCR')
+
+    def visitDict(self, node):
+        self.set_lineno(node)
+        for k, v in zip(node.keys, node.values):
+            self.visit(k)
+            self.visit(v)
+        self.emit('BUILD_MAP', len(node.keys))
 
 class NestedScopeMixin:
     """Defines initClass() for nested scoping (Python 2.2-compatible)"""
