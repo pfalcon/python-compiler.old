@@ -681,15 +681,27 @@ class CodeGenerator:
         self.newBlock()
 
     def _makeClosure(self, gen, args):
+        # Construct qualname prefix
+        prefix = ""
+        parent = gen.scope.parent
+        while not isinstance(parent, symbols.ModuleScope):
+            if isinstance(parent, symbols.FunctionScope):
+                prefix = parent.name + ".<locals>." + prefix
+            else:
+                prefix = parent.name + "." + prefix
+            parent = parent.parent
+
         frees = gen.scope.get_free_vars()
         if frees:
             for name in frees:
                 self.emit('LOAD_CLOSURE', name)
             self.emit('BUILD_TUPLE', len(frees))
             self.emit('LOAD_CONST', gen)
+            self.emit('LOAD_CONST', prefix + gen.name)  # py3 qualname
             self.emit('MAKE_CLOSURE', args)
         else:
             self.emit('LOAD_CONST', gen)
+            self.emit('LOAD_CONST', prefix + gen.name)  # py3 qualname
             self.emit('MAKE_FUNCTION', args)
 
     def visitGenExpr(self, node):
