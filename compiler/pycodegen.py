@@ -6,7 +6,8 @@ import struct
 import sys
 from io import StringIO
 
-from compiler import ast, parse, walk, syntax
+import ast
+from compiler import parse, walk, syntax
 from compiler import pyassem, misc, future, symbols
 from compiler.consts import SC_LOCAL, SC_GLOBAL_IMPLICIT, SC_GLOBAL_EXPLICIT, \
      SC_FREE, SC_CELL
@@ -155,25 +156,29 @@ class LocalNameFinder:
         for name in node.names:
             self.globals.add(name)
 
-    def visitFunction(self, node):
+    def visitFunctionDef(self, node):
         self.names.add(node.name)
 
     def visitLambda(self, node):
         pass
 
     def visitImport(self, node):
-        for name, alias in node.names:
-            self.names.add(alias or name)
+        for alias in node.names:
+            self.names.add(alias.asname or alias.name)
 
-    def visitFrom(self, node):
-        for name, alias in node.names:
-            self.names.add(alias or name)
+    def visitImportFrom(self, node):
+        for alias in node.names:
+            self.names.add(alias.asname or alias.name)
 
-    def visitClass(self, node):
+    def visitClassDef(self, node):
         self.names.add(node.name)
 
     def visitAssName(self, node):
         self.names.add(node.name)
+
+    def visitName(self, node):
+        if isinstance(node.ctx, ast.Store):
+            self.names.add(node.id)
 
 def is_constant_false(node):
     if isinstance(node, ast.Const):
