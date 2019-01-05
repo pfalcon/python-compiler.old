@@ -15,6 +15,10 @@ if VERSION < 3:
         args = list(args)
         del args[1]
         return types.CodeType(*args)
+    org_bytes = bytes
+    def bytes(l):
+        assert isinstance(l, list)
+        return org_bytes(bytearray(l))
 else:
     CodeType = types.CodeType
     long = int
