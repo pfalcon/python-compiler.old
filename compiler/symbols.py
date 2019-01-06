@@ -420,6 +420,13 @@ class SymbolVisitor:
         if node.value:
             self.visit(node.value, scope)
 
+    def visitTry(self, node, scope):
+        # Handle exception capturing vars
+        for handler in node.handlers:
+            if handler.name:
+                scope.add_def(handler.name)
+
+
 def list_eq(l1, l2):
     return sorted(l1) == sorted(l2)
 
