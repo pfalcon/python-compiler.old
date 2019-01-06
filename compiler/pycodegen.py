@@ -862,8 +862,20 @@ class CodeGenerator:
             else:
                 self.emit('POP_TOP')
             self.emit('POP_TOP')
-            self.visit(body)
-            self.emit('POP_EXCEPT')
+
+            if target:
+                protected = ast.Try(
+                    body=body, handlers=[], orelse=[],
+                    finalbody=[
+                        ast.Assign(targets=[ast.Name(id=target, ctx=ast.Store())], value=ast.NameConstant(value=None)),
+                        ast.Delete(ast.Name(id=target, ctx=ast.Del())),
+                    ]
+                )
+                self.visitTryFinally(protected, except_protect=True)
+            else:
+                self.visit(body)
+                self.emit('POP_EXCEPT')
+
             self.emit('JUMP_FORWARD', end)
             if expr:
                 self.nextBlock(next)
@@ -875,7 +887,7 @@ class CodeGenerator:
             self.visit(node.orelse)
         self.nextBlock(end)
 
-    def visitTryFinally(self, node):
+    def visitTryFinally(self, node, except_protect=False):
         body = self.newBlock()
         final = self.newBlock()
         self.set_lineno(node)
@@ -885,6 +897,8 @@ class CodeGenerator:
         self.visit(node.body)
         self.emit('POP_BLOCK')
         self.setups.pop()
+        if except_protect:
+            self.emit('POP_EXCEPT')
         self.emit('LOAD_CONST', None)
         self.nextBlock(final)
         self.setups.push((END_FINALLY, final))
