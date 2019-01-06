@@ -809,11 +809,26 @@ class CodeGenerator:
             n = n + 1
         self.emit('RAISE_VARARGS', n)
 
+    def visitTry(self, node):
+        if node.finalbody and not node.handlers:
+            self.visitTryFinally(node)
+            return
+        if not node.finalbody and node.handlers:
+            self.visitTryExcept(node)
+            return
+
+        # Split into 2 statements, try-except wrapped with try-finally
+        try_ex = ast.Try(body=node.body, handlers=node.handlers, orelse=node.orelse, finalbody=[])
+        node.body = try_ex
+        node.handlers = []
+        node.orelse = []
+        self.visitTryFinally(node)
+
     def visitTryExcept(self, node):
         body = self.newBlock()
         handlers = self.newBlock()
         end = self.newBlock()
-        if node.else_:
+        if node.orelse:
             lElse = self.newBlock()
         else:
             lElse = end
@@ -829,7 +844,10 @@ class CodeGenerator:
 
         last = len(node.handlers) - 1
         for i in range(len(node.handlers)):
-            expr, target, body = node.handlers[i]
+            handler = node.handlers[i]
+            expr = handler.type
+            target = handler.name
+            body = handler.body
             self.set_lineno(expr)
             if expr:
                 self.emit('DUP_TOP')
@@ -840,20 +858,21 @@ class CodeGenerator:
                 self.nextBlock()
             self.emit('POP_TOP')
             if target:
-                self.visit(target)
+                self.visit(ast.Name(id=target, ctx=ast.Store()))
             else:
                 self.emit('POP_TOP')
             self.emit('POP_TOP')
             self.visit(body)
+            self.emit('POP_EXCEPT')
             self.emit('JUMP_FORWARD', end)
             if expr:
                 self.nextBlock(next)
             else:
                 self.nextBlock()
         self.emit('END_FINALLY')
-        if node.else_:
+        if node.orelse:
             self.nextBlock(lElse)
-            self.visit(node.else_)
+            self.visit(node.orelse)
         self.nextBlock(end)
 
     def visitTryFinally(self, node):
@@ -869,7 +888,7 @@ class CodeGenerator:
         self.emit('LOAD_CONST', None)
         self.nextBlock(final)
         self.setups.push((END_FINALLY, final))
-        self.visit(node.final)
+        self.visit(node.finalbody)
         self.emit('END_FINALLY')
         self.setups.pop()
 
