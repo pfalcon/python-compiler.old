@@ -1542,21 +1542,24 @@ class AbstractClassCode:
     def __init__(self, klass, scopes, module):
         self.class_name = klass.name
         self.module = module
-        self.graph = pyassem.PyFlowGraph(klass.name, klass.filename,
+        self.name = klass.name
+        filename = module.filename
+        self.graph = pyassem.PyFlowGraph(klass.name, filename,
                                            optimized=0, klass=1)
         self.super_init()
-        lnf = walk(klass.code, self.NameFinder(), verbose=0)
+        lnf = walk(klass.body, self.NameFinder(), verbose=0)
         self.locals.push(lnf.getLocals())
         self.graph.setFlag(CO_NEWLOCALS)
-        if klass.doc:
-            self.setDocstring(klass.doc)
+        doc = ast.get_docstring(klass)
+        if doc:
+            self.setDocstring(doc)
 
     def get_module(self):
         return self.module
 
     def finish(self):
         self.graph.startExitBlock()
-        self.emit('LOAD_LOCALS')
+        self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 
 class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
@@ -1572,10 +1575,13 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
         self.set_lineno(klass)
-        self.emit("LOAD_GLOBAL", "__name__")
+        self.emit("LOAD_NAME", "__name__")
         self.storeName("__module__")
-        if klass.doc:
-            self.emit("LOAD_CONST", klass.doc)
+        self.emit("LOAD_CONST", self.name)
+        self.storeName("__qualname__")
+        doc = ast.get_docstring(klass)
+        if doc:
+            self.emit("LOAD_CONST", doc)
             self.storeName('__doc__')
 
 
