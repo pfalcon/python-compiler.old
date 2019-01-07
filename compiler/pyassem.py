@@ -225,11 +225,8 @@ class Block:
         """Returns True if there is an unconditional transfer to an other block
         at the end of this block. This means there is no risk for the bytecode
         executer to go past this block's bytecode."""
-        try:
-            op, arg = self.insts[-1]
-        except (IndexError, ValueError):
-            return
-        return op in self._uncond_transfer
+        if self.insts and self.insts[-1][0] in self._uncond_transfer:
+            return True
 
     def get_children(self):
         return list(self.outEdges) + self.next
