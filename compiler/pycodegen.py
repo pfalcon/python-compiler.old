@@ -1197,23 +1197,34 @@ class CodeGenerator:
             self.visit(node.globals)
         self.emit('EXEC_STMT')
 
-    def visitCallFunc(self, node):
+    def visitCall(self, node):
         pos = 0
         kw = 0
         self.set_lineno(node)
-        self.visit(node.node)
+        self.visit(node.func)
+        star_args = None
+        dstar_args = None
         for arg in node.args:
-            self.visit(arg)
-            if isinstance(arg, ast.Keyword):
-                kw = kw + 1
+            if isinstance(arg, ast.Starred):
+                star_args = arg
             else:
+                self.visit(arg)
                 pos = pos + 1
-        if node.star_args is not None:
-            self.visit(node.star_args)
-        if node.dstar_args is not None:
-            self.visit(node.dstar_args)
-        have_star = node.star_args is not None
-        have_dstar = node.dstar_args is not None
+
+        for kwarg in node.keywords:
+            if kwarg.arg is None:
+                dstar_args = kwarg.value
+            else:
+                self.emit('LOAD_CONST', kwarg.arg)
+                self.visit(kwarg.value)
+                kw = kw + 1
+
+        if star_args is not None:
+            self.visit(star_args)
+        if dstar_args is not None:
+            self.visit(dstar_args)
+        have_star = star_args is not None
+        have_dstar = dstar_args is not None
         opcode = callfunc_opcode_info[have_star, have_dstar]
         self.emit(opcode, kw << 8 | pos)
 
