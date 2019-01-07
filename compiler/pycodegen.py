@@ -1451,29 +1451,37 @@ class AbstractFunctionCode:
         self.module = mod
         if isLambda:
             klass = FunctionCodeGenerator
-            name = "<lambda.%d>" % klass.lambdaCount
+            name = "<lambda>"
             klass.lambdaCount = klass.lambdaCount + 1
         else:
             name = func.name
 
-        args, hasTupleArg = generateArgList(func.argnames)
-        self.graph = pyassem.PyFlowGraph(name, func.filename, args,
+        self.name = name
+
+        args = [elt.arg for elt in func.args.args]
+
+        if func.args.vararg:
+            args.append(func.args.vararg.arg)
+        if func.args.kwarg:
+            args.append(func.args.kwarg.arg)
+        filename = mod.filename
+        self.graph = pyassem.PyFlowGraph(name, filename, args,
                                          optimized=1)
         self.isLambda = isLambda
         self.super_init()
 
-        if not isLambda and func.doc:
-            self.setDocstring(func.doc)
+        if not isLambda:
+            doc = ast.get_docstring(func)
+            if doc:
+                self.setDocstring(doc)
 
-        lnf = walk(func.code, self.NameFinder(args), verbose=0)
+        lnf = walk(func.body, self.NameFinder(args), verbose=0)
         self.locals.push(lnf.getLocals())
-        if func.varargs:
+        if func.args.vararg:
             self.graph.setFlag(CO_VARARGS)
-        if func.kwargs:
+        if func.args.kwarg:
             self.graph.setFlag(CO_VARKEYWORDS)
         self.set_lineno(func)
-        if hasTupleArg:
-            self.generateArgUnpack(func.argnames)
 
     def get_module(self):
         return self.module
@@ -1483,13 +1491,6 @@ class AbstractFunctionCode:
         if not self.isLambda:
             self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
-
-    def generateArgUnpack(self, args):
-        for i in range(len(args)):
-            arg = args[i]
-            if isinstance(arg, tuple):
-                self.emit('LOAD_FAST', '.%d' % (i * 2))
-                self.unpackSequence(arg)
 
     def unpackSequence(self, tup):
         if VERSION > 1:
@@ -1576,22 +1577,6 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
             self.emit("LOAD_CONST", klass.doc)
             self.storeName('__doc__')
 
-def generateArgList(arglist):
-    """Generate an arg list marking TupleArgs"""
-    args = []
-    extra = []
-    count = 0
-    for i in range(len(arglist)):
-        elt = arglist[i]
-        if isinstance(elt, str):
-            args.append(elt)
-        elif isinstance(elt, tuple):
-            args.append(TupleArg(i * 2, elt))
-            extra.extend(misc.flatten(elt))
-            count = count + 1
-        else:
-            raise ValueError("unexpect argument type: %r" % elt)
-    return args + extra, count
 
 def findOp(node):
     """Find the op (DELETE, LOAD, STORE) in an AssTuple tree"""
