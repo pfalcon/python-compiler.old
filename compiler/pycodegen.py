@@ -403,13 +403,14 @@ class CodeGenerator:
         walk(node.body, gen)
         gen.finish()
         self.set_lineno(node)
+        self.emit('LOAD_BUILD_CLASS')
+        self._makeClosure(gen, 0)
         self.emit('LOAD_CONST', node.name)
+        args = 2
         for base in node.bases:
             self.visit(base)
-        self.emit('BUILD_TUPLE', len(node.bases))
-        self._makeClosure(gen, 0)
-        self.emit('CALL_FUNCTION', 0)
-        self.emit('BUILD_CLASS')
+            args += 1
+        self.emit('CALL_FUNCTION', args)
         self.storeName(node.name)
 
     # The rest are standard visitor methods
