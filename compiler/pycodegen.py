@@ -341,6 +341,14 @@ class CodeGenerator:
             return True
         return False
 
+    def skip_docstring(self, body):
+        """Given list of statements, representing body of a function, class,
+        or module, skip docstring, if any.
+        """
+        if isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Str):
+            return body[1:]
+        return body
+
     # The first few visitor methods handle nodes that generator new
     # code objects.  They use class attributes to determine what
     # specialized code generators to use.
@@ -353,12 +361,14 @@ class CodeGenerator:
         self.scopes = self.parseSymbols(node)
         self.scope = self.scopes[node]
         self.emit('SET_LINENO', 0)
-        if node.doc:
-            self.emit('LOAD_CONST', node.doc)
+        doc = ast.get_docstring(node)
+        if doc:
+            self.set_lineno(node.body[0])
+            self.emit('LOAD_CONST', doc)
             self.storeName('__doc__')
         lnf = walk(node.body, self.NameFinder(), verbose=0)
         self.locals.push(lnf.getLocals())
-        self.visit(node.body)
+        self.visit(self.skip_docstring(node.body))
         self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 
@@ -371,8 +381,9 @@ class CodeGenerator:
 
     def visitFunctionDef(self, node):
         self._visitFuncOrLambda(node, isLambda=0)
-        if node.doc:
-            self.setDocstring(node.doc)
+        # Handled by AbstractFunctionCode?
+        #if node.doc:
+        #    self.setDocstring(node.doc)
         self.storeName(node.name)
 
     def visitLambda(self, node):
@@ -388,7 +399,10 @@ class CodeGenerator:
 
         gen = self.FunctionGen(node, self.scopes, isLambda,
                                self.class_name, self.get_module())
-        walk(node.body, gen)
+        body = node.body
+        if not isLambda:
+            body = self.skip_docstring(body)
+        walk(body, gen)
         gen.finish()
         self.set_lineno(node)
         for default in node.args.defaults:
@@ -400,7 +414,7 @@ class CodeGenerator:
     def visitClassDef(self, node):
         gen = self.ClassGen(node, self.scopes,
                             self.get_module())
-        walk(node.body, gen)
+        walk(self.skip_docstring(node.body), gen)
         gen.finish()
         self.set_lineno(node)
         self.emit('LOAD_BUILD_CLASS')
@@ -1581,6 +1595,7 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
         self.storeName("__qualname__")
         doc = ast.get_docstring(klass)
         if doc:
+            self.set_lineno(klass.body[0])
             self.emit("LOAD_CONST", doc)
             self.storeName('__doc__')
 
