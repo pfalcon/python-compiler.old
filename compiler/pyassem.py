@@ -469,19 +469,14 @@ class PyFlowGraph(FlowGraph):
         return self._lookupName(arg, self.consts)
 
     def _convert_LOAD_FAST(self, arg):
-        self._lookupName(arg, self.names)
         return self._lookupName(arg, self.varnames)
     _convert_STORE_FAST = _convert_LOAD_FAST
     _convert_DELETE_FAST = _convert_LOAD_FAST
 
     def _convert_LOAD_NAME(self, arg):
-        if self.klass is None:
-            self._lookupName(arg, self.varnames)
         return self._lookupName(arg, self.names)
 
     def _convert_NAME(self, arg):
-        if self.klass is None:
-            self._lookupName(arg, self.varnames)
         return self._lookupName(arg, self.names)
     _convert_STORE_NAME = _convert_NAME
     _convert_DELETE_NAME = _convert_NAME
@@ -490,19 +485,19 @@ class PyFlowGraph(FlowGraph):
     _convert_STORE_ATTR = _convert_NAME
     _convert_LOAD_ATTR = _convert_NAME
     _convert_DELETE_ATTR = _convert_NAME
-    _convert_LOAD_GLOBAL = _convert_NAME
-    _convert_STORE_GLOBAL = _convert_NAME
-    _convert_DELETE_GLOBAL = _convert_NAME
+
+    def _convert_GLOBAL(self, arg):
+        return self._lookupName(arg, self.names)
+    _convert_LOAD_GLOBAL = _convert_GLOBAL
+    _convert_STORE_GLOBAL = _convert_GLOBAL
+    _convert_DELETE_GLOBAL = _convert_GLOBAL
 
     def _convert_DEREF(self, arg):
-        self._lookupName(arg, self.names)
-        self._lookupName(arg, self.varnames)
         return self._lookupName(arg, self.closure)
     _convert_LOAD_DEREF = _convert_DEREF
     _convert_STORE_DEREF = _convert_DEREF
 
     def _convert_LOAD_CLOSURE(self, arg):
-        self._lookupName(arg, self.varnames)
         return self._lookupName(arg, self.closure)
 
     _cmp = list(dis.cmp_op)
