@@ -450,7 +450,7 @@ class PyFlowGraph(FlowGraph):
                          if name in cells]
         for name in self.cellvars:
             del cells[name]
-        self.cellvars = self.cellvars + list(cells.keys())
+        self.cellvars = self.cellvars + sorted(cells.keys())
         self.closure = self.cellvars + self.freevars
 
     def _lookupName(self, name, list):
