@@ -1,6 +1,6 @@
 from __future__ import print_function
 
-from compiler import ast
+import ast
 
 # XXX should probably rename ASTVisitor to ASTWalker
 # XXX can it be made even more generic?
@@ -38,8 +38,21 @@ class ASTVisitor:
         self._cache = {}
 
     def default(self, node, *args):
-        for child in node.getChildNodes():
-            self.dispatch(child, *args)
+        """Called if no explicit visitor function exists for a node."""
+        if isinstance(node, list):
+            for item in node:
+                if isinstance(item, ast.AST):
+                    self.dispatch(item, *args)
+            return
+
+        for field, value in ast.iter_fields(node):
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, ast.AST):
+                        self.dispatch(item, *args)
+            elif isinstance(value, ast.AST):
+                self.dispatch(value, *args)
+
 
     def dispatch(self, node, *args):
         self.node = node
