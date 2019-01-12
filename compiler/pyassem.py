@@ -302,8 +302,6 @@ class PyFlowGraph(FlowGraph):
 
     def setFlag(self, flag):
         self.flags = self.flags | flag
-        if flag == CO_VARARGS:
-            self.argcount = self.argcount - 1
 
     def checkFlag(self, flag):
         if self.flags & flag:
@@ -552,9 +550,14 @@ class PyFlowGraph(FlowGraph):
             nlocals = 0
         else:
             nlocals = len(self.varnames)
+
         argcount = self.argcount
+        # argcount it code object doesn't count varargs and kwargs
+        if self.flags & CO_VARARGS:
+            argcount = argcount - 1
         if self.flags & CO_VARKEYWORDS:
             argcount = argcount - 1
+
         return CodeType(argcount, 0, nlocals, self.stacksize, self.flags,
                         self.lnotab.getCode(), self.getConsts(),
                         tuple(self.names), tuple(self.varnames),
