@@ -1146,31 +1146,14 @@ class CodeGenerator:
         elif mode == "store":
             self.storeName(node.id)
 
-    def visitAugGetattr(self, node, mode):
+    def visitAugAttribute(self, node, mode):
         if mode == "load":
-            self.visit(node.expr)
+            self.visit(node.value)
             self.emit('DUP_TOP')
-            self.emit('LOAD_ATTR', self.mangle(node.attrname))
+            self.emit('LOAD_ATTR', self.mangle(node.attr))
         elif mode == "store":
             self.emit('ROT_TWO')
-            self.emit('STORE_ATTR', self.mangle(node.attrname))
-
-    def visitAugSlice(self, node, mode):
-        if mode == "load":
-            self.visitSlice(node, 1)
-        elif mode == "store":
-            slice = 0
-            if node.lower:
-                slice = slice | 1
-            if node.upper:
-                slice = slice | 2
-            if slice == 0:
-                self.emit('ROT_TWO')
-            elif slice == 3:
-                self.emit('ROT_FOUR')
-            else:
-                self.emit('ROT_THREE')
-            self.emit('STORE_SLICE+%d' % slice)
+            self.emit('STORE_ATTR', self.mangle(node.attr))
 
     def visitAugSubscript(self, node, mode):
         if mode == "load":
@@ -1267,7 +1250,11 @@ class CodeGenerator:
         if isinstance(node.ctx, ast.Load):
             self.emit('BINARY_SUBSCR')
         elif isinstance(node.ctx, ast.Store):
-            self.emit('STORE_SUBSCR')
+            if aug_flag:
+                self.emit('DUP_TOP_TWO')
+                self.emit('BINARY_SUBSCR')
+            else:
+                self.emit('STORE_SUBSCR')
         elif isinstance(node.ctx, ast.Del):
             self.emit('DELETE_SUBSCR')
         else:
@@ -1613,13 +1600,10 @@ class Delegator:
     def __getattr__(self, attr):
         return getattr(self.obj, attr)
 
-class AugGetattr(Delegator):
+class AugAttribute(Delegator):
     pass
 
 class AugName(Delegator):
-    pass
-
-class AugSlice(Delegator):
     pass
 
 class AugSubscript(Delegator):
@@ -1635,11 +1619,10 @@ class CompInner(Delegator):
         self.elt_insts = elt_insts
 
 wrapper = {
-    ast.Getattr: AugGetattr,
+    ast.Attribute: AugAttribute,
     ast.Name: AugName,
-    ast.Slice: AugSlice,
     ast.Subscript: AugSubscript,
-    }
+}
 
 def wrap_aug(node):
     return wrapper[node.__class__](node)
