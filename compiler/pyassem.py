@@ -170,11 +170,16 @@ def order_blocks(start_block, exit_block):
         if b.next:
             b = b.next[0]
             continue
-        elif b is not exit_block and not b.has_unconditional_transfer():
-            order.append(exit_block)
+        #elif b is not exit_block and not b.has_unconditional_transfer():
+        #    order.append(exit_block)
         if not remaining:
             break
         b = find_next()
+
+    if exit_block not in order:
+        if not order[-1].has_return():
+            order.append(exit_block)
+
     return order
 
 
@@ -227,6 +232,9 @@ class Block:
         executer to go past this block's bytecode."""
         if self.insts and self.insts[-1][0] in self._uncond_transfer:
             return True
+
+    def has_return(self):
+        return self.insts and self.insts[-1][0] == "RETURN_VALUE"
 
     def get_children(self):
         return list(self.outEdges) + self.next
