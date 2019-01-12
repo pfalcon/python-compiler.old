@@ -255,6 +255,13 @@ class SymbolVisitor:
 
         self.handle_free_vars(scope, parent)
 
+    # Whether to generate code for comprehensions inline or as nested scope
+    # is configurable, but we compute nested scopes for them unconditionally
+    # TODO: this may be not correct, check.
+    visitSetComp = visitGeneratorExp
+    visitListComp = visitGeneratorExp
+    visitDictComp = visitGeneratorExp
+
     def visitcomprehension(self, node, scope):
         self.visit(node.target, scope, 1)
         self.visit(node.iter, scope)

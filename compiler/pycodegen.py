@@ -16,6 +16,8 @@ from compiler.consts import (CO_VARARGS, CO_VARKEYWORDS, CO_NEWLOCALS,
      CO_FUTURE_ABSIMPORT, CO_FUTURE_WITH_STATEMENT, CO_FUTURE_PRINT_FUNCTION)
 from compiler.pyassem import TupleArg
 
+from . import config
+
 # XXX The version-specific code can go, since this code only works with 2.x.
 # Do we have Python 1.x or Python 2.x?
 try:
@@ -602,99 +604,6 @@ class CodeGenerator:
             self.emit('POP_TOP')
             self.nextBlock(end)
 
-    # list comprehensions
-    def visitListComp(self, node):
-        self.set_lineno(node)
-        # setup list
-        self.emit('BUILD_LIST', 0)
-
-        stack = []
-        for i, for_ in zip(range(len(node.quals)), node.quals):
-            start, anchor = self.visit(for_)
-            cont = None
-            for if_ in for_.ifs:
-                if cont is None:
-                    cont = self.newBlock()
-                self.visit(if_, cont)
-            stack.insert(0, (start, cont, anchor))
-
-        self.visit(node.expr)
-        self.emit('LIST_APPEND', len(node.quals) + 1)
-
-        for start, cont, anchor in stack:
-            if cont:
-                self.nextBlock(cont)
-            self.emit('JUMP_ABSOLUTE', start)
-            self.startBlock(anchor)
-
-    def visitSetComp(self, node):
-        self.set_lineno(node)
-        # setup list
-        self.emit('BUILD_SET', 0)
-
-        stack = []
-        for i, for_ in zip(range(len(node.quals)), node.quals):
-            start, anchor = self.visit(for_)
-            cont = None
-            for if_ in for_.ifs:
-                if cont is None:
-                    cont = self.newBlock()
-                self.visit(if_, cont)
-            stack.insert(0, (start, cont, anchor))
-
-        self.visit(node.expr)
-        self.emit('SET_ADD', len(node.quals) + 1)
-
-        for start, cont, anchor in stack:
-            if cont:
-                self.nextBlock(cont)
-            self.emit('JUMP_ABSOLUTE', start)
-            self.startBlock(anchor)
-
-    def visitDictComp(self, node):
-        self.set_lineno(node)
-        # setup list
-        self.emit('BUILD_MAP', 0)
-
-        stack = []
-        for i, for_ in zip(range(len(node.quals)), node.quals):
-            start, anchor = self.visit(for_)
-            cont = None
-            for if_ in for_.ifs:
-                if cont is None:
-                    cont = self.newBlock()
-                self.visit(if_, cont)
-            stack.insert(0, (start, cont, anchor))
-
-        self.visit(node.value)
-        self.visit(node.key)
-        self.emit('MAP_ADD', len(node.quals) + 1)
-
-        for start, cont, anchor in stack:
-            if cont:
-                self.nextBlock(cont)
-            self.emit('JUMP_ABSOLUTE', start)
-            self.startBlock(anchor)
-
-    def visitListCompFor(self, node):
-        start = self.newBlock()
-        anchor = self.newBlock()
-
-        self.visit(node.list)
-        self.emit('GET_ITER')
-        self.nextBlock(start)
-        self.set_lineno(node, force=True)
-        self.emit('FOR_ITER', anchor)
-        self.nextBlock()
-        self.visit(node.assign)
-        return start, anchor
-
-    def visitListCompIf(self, node, branch):
-        self.set_lineno(node, force=True)
-        self.visit(node.test)
-        self.emit('POP_JUMP_IF_FALSE', branch)
-        self.newBlock()
-
     def _makeClosure(self, gen, args):
         # Construct qualname prefix
         prefix = ""
@@ -719,56 +628,89 @@ class CodeGenerator:
             self.emit('LOAD_CONST', prefix + gen.name)  # py3 qualname
             self.emit('MAKE_FUNCTION', args)
 
-    def visitGenExpr(self, node):
+    def wrap_comprehension(self, node, nested_scope):
+        if isinstance(node, ast.GeneratorExp):
+            inner = CompInner(
+                node, nested_scope, None,
+                [node.elt], ["YIELD_VALUE", "POP_TOP"]
+            )
+            inner_name = "<genexpr>"
+        elif isinstance(node, ast.SetComp):
+            inner = CompInner(
+                node, nested_scope, ("BUILD_SET", 0),
+                [node.elt], [("SET_ADD", len(node.generators) + 1)]
+            )
+            inner_name = "<setcomp>"
+        elif isinstance(node, ast.ListComp):
+            inner = CompInner(
+                node, nested_scope, ("BUILD_LIST", 0),
+                [node.elt], [("LIST_APPEND", len(node.generators) + 1)]
+            )
+            inner_name = "<listcomp>"
+        elif isinstance(node, ast.DictComp):
+            inner = CompInner(
+                node, nested_scope, ("BUILD_MAP", 0),
+                [node.value, node.key], [("MAP_ADD", len(node.generators) + 1)]
+            )
+            inner_name = "<dictcomp>"
+        else:
+            assert 0
+        return inner, inner_name
+
+    def visitNestedComp(self, node):
+        # Make comprehension node to also look like function node
+        class Holder: pass
+        node.args = Holder()
+        arg1 = Holder()
+        arg1.arg = ".0"
+        node.args.args = [arg1]
+        node.args.vararg = None
+        node.args.kwarg = None
+        node.body = []
+
+        inner, inner_name = self.wrap_comprehension(node, nested_scope=True)
+
         gen = GenExprCodeGenerator(node, self.scopes, self.class_name,
-                                   self.get_module())
-        walk(node.code, gen)
+                                   self.get_module(), inner_name)
+        walk(inner, gen)
         gen.finish()
         self.set_lineno(node)
         self._makeClosure(gen, 0)
         # precomputation of outmost iterable
-        self.visit(node.code.quals[0].iter)
+        self.visit(node.generators[0].iter)
         self.emit('GET_ITER')
         self.emit('CALL_FUNCTION', 1)
 
-    def visitGenExprInner(self, node):
-        self.set_lineno(node)
-        # setup list
+    def visitInlineComp(self, node):
+        inner, _ = self.wrap_comprehension(node, nested_scope=False)
+        self.visit(inner)
 
-        stack = []
-        for i, for_ in zip(range(len(node.quals)), node.quals):
-            start, anchor, end = self.visit(for_)
-            cont = None
-            for if_ in for_.ifs:
-                if cont is None:
-                    cont = self.newBlock()
-                self.visit(if_, cont)
-            stack.insert(0, (start, cont, anchor, end))
+    def visitGenericComp(self, node):
+        if config.COMPREHENSION_SCOPE:
+            return self.visitNestedComp(node)
+        else:
+            return self.visitInlineComp(node)
 
-        self.visit(node.expr)
-        self.emit('YIELD_VALUE')
-        self.emit('POP_TOP')
+    # Genereator expression should be always compiled with nested scope
+    # to follow generator semantics.
+    visitGeneratorExp = visitNestedComp
+    # Other comprehensions can be configured inline or nested-scope.
+    visitSetComp = visitGenericComp
+    visitListComp = visitGenericComp
+    visitDictComp = visitGenericComp
 
-        for start, cont, anchor, end in stack:
-            if cont:
-                self.nextBlock(cont)
-            self.emit('JUMP_ABSOLUTE', start)
-            self.startBlock(anchor)
-            self.emit('POP_BLOCK')
-            self.setups.pop()
-            self.nextBlock(end)
+    def visitcomprehension(self, node, is_outmost):
+        start = self.newBlock("comp_start")
+        anchor = self.newBlock("comp_anchor")
+        # TODO: end is not used
+        end = self.newBlock("comp_end")
 
-        self.emit('LOAD_CONST', None)
+        # SETUP_LOOP isn't needed because(?) break/continue are
+        # not supported in comprehensions
+        #self.setups.push((LOOP, start))
+        #self.emit('SETUP_LOOP', end)
 
-    def visitGenExprFor(self, node):
-        start = self.newBlock()
-        anchor = self.newBlock()
-        end = self.newBlock()
-
-        self.setups.push((LOOP, start))
-        self.emit('SETUP_LOOP', end)
-
-        if node.is_outmost:
+        if is_outmost:
             self.loadName('.0')
         else:
             self.visit(node.iter)
@@ -778,12 +720,49 @@ class CodeGenerator:
         self.set_lineno(node, force=True)
         self.emit('FOR_ITER', anchor)
         self.nextBlock()
-        self.visit(node.assign)
+        self.visit(node.target)
         return start, anchor, end
 
-    def visitGenExprIf(self, node, branch):
+    def visitCompInner(self, node):
+        self.set_lineno(node)
+        if node.init_inst:
+            self.emit(*node.init_inst)
+
+        stack = []
+        is_outmost = node.nested_scope
+        for for_ in node.generators:
+            start, anchor, end = self.visit(for_, is_outmost)
+            is_outmost = False
+            cont = None
+            for if_ in for_.ifs:
+                if cont is None:
+                    cont = self.newBlock()
+                self._visitCompIf(if_, cont)
+            stack.insert(0, (start, cont, anchor, end))
+
+        #self.visit(node.elt)
+        for elt in node.elt_nodes:
+            self.visit(elt)
+        #self.emit('YIELD_VALUE')
+        #self.emit('POP_TOP')
+        for inst in node.elt_insts:
+            if isinstance(inst, str):
+                self.emit(inst)
+            else:
+                self.emit(*inst)
+
+        for start, cont, anchor, end in stack:
+            if cont:
+                self.nextBlock(cont)
+            self.emit('JUMP_ABSOLUTE', start)
+            self.startBlock(anchor)
+
+        if isinstance(node.obj, ast.GeneratorExp):
+            self.emit('LOAD_CONST', None)
+
+    def _visitCompIf(self, node, branch):
         self.set_lineno(node, force=True)
-        self.visit(node.test)
+        self.visit(node)
         self.emit('POP_JUMP_IF_FALSE', branch)
         self.newBlock()
 
@@ -1461,12 +1440,12 @@ class AbstractFunctionCode:
     optimized = 1
     lambdaCount = 0
 
-    def __init__(self, func, scopes, isLambda, class_name, mod):
+    def __init__(self, func, scopes, isLambda, class_name, mod, lambda_name="<lambda>"):
         self.class_name = class_name
         self.module = mod
         if isLambda:
             klass = FunctionCodeGenerator
-            name = "<lambda>"
+            name = lambda_name
             klass.lambdaCount = klass.lambdaCount + 1
         else:
             name = func.name
@@ -1543,10 +1522,10 @@ class GenExprCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
 
     __super_init = AbstractFunctionCode.__init__
 
-    def __init__(self, gexp, scopes, class_name, mod):
+    def __init__(self, gexp, scopes, class_name, mod, inner_name):
         self.scopes = scopes
         self.scope = scopes[gexp]
-        self.__super_init(gexp, scopes, 1, class_name, mod)
+        self.__super_init(gexp, scopes, 1, class_name, mod, lambda_name=inner_name)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
         self.graph.setFlag(CO_GENERATOR)
@@ -1645,6 +1624,15 @@ class AugSlice(Delegator):
 
 class AugSubscript(Delegator):
     pass
+
+class CompInner(Delegator):
+
+    def __init__(self, obj, nested_scope, init_inst, elt_nodes, elt_insts):
+        Delegator.__init__(self, obj)
+        self.nested_scope = nested_scope
+        self.init_inst = init_inst
+        self.elt_nodes = elt_nodes
+        self.elt_insts = elt_insts
 
 wrapper = {
     ast.Getattr: AugGetattr,
