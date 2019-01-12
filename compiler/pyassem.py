@@ -66,8 +66,8 @@ class FlowGraph:
         self.current.addNext(block)
         self.startBlock(block)
 
-    def newBlock(self):
-        b = Block()
+    def newBlock(self, label=""):
+        b = Block(label)
         self.blocks.add(b)
         return b
 
