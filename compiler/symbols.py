@@ -117,7 +117,7 @@ class Scope:
         for name in self.uses.keys():
             if name not in self.defs and name not in self.globals:
                 free[name] = 1
-        return free.keys()
+        return sorted(free.keys())
 
     def handle_children(self):
         for child in self.children:
@@ -174,7 +174,7 @@ class Scope:
         return child_globals
 
     def get_cell_vars(self):
-        return self.cells.keys()
+        return sorted(self.cells.keys())
 
 class ModuleScope(Scope):
     __super_init = Scope.__init__
