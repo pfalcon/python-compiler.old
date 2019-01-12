@@ -1378,6 +1378,7 @@ class ModuleCodeGenerator(NestedScopeMixin, CodeGenerator):
     scopes = None
 
     def __init__(self, tree):
+        self.filename = tree.filename
         self.graph = pyassem.PyFlowGraph("<module>", tree.filename)
         self.futures = future.find_futures(tree)
         self.__super_init()
