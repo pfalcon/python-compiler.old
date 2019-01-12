@@ -782,9 +782,10 @@ class CodeGenerator:
             self.emit('POP_JUMP_IF_TRUE', end)
             self.nextBlock()
             self.emit('LOAD_GLOBAL', 'AssertionError')
-            if node.fail:
-                self.visit(node.fail)
-                self.emit('RAISE_VARARGS', 2)
+            if node.msg:
+                self.visit(node.msg)
+                self.emit('CALL_FUNCTION', 1)
+                self.emit('RAISE_VARARGS', 1)
             else:
                 self.emit('RAISE_VARARGS', 1)
             self.nextBlock(end)
