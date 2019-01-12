@@ -26,6 +26,8 @@ class FutureParser:
 
     def visitModule(self, node):
         for s in node.body:
+            if isinstance(s, ast.Expr) and isinstance(s.value, ast.Str):
+                continue
             if not self.check_stmt(s):
                 break
 
