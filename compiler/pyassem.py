@@ -418,7 +418,12 @@ class PyFlowGraph(FlowGraph):
     def convertArgs(self):
         """Convert arguments from symbolic to concrete form"""
         assert self.stage == FLAT
-        self.consts.insert(0, self.docstring)
+        # Docstring is first entry in co_consts for normal functions
+        # (Other types of code objects deal with docstrings in different
+        # manner, e.g. lambdas and comprehensions don't have docstrings,
+        # classes store them as __doc__ attribute.
+        if not self.name.startswith("<") and not self.klass:
+            self.consts.insert(0, self.docstring)
         self.sort_cellvars()
         for i in range(len(self.insts)):
             t = self.insts[i]
