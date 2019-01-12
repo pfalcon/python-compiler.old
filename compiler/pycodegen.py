@@ -792,14 +792,8 @@ class CodeGenerator:
     def visitRaise(self, node):
         self.set_lineno(node)
         n = 0
-        if node.expr1:
-            self.visit(node.expr1)
-            n = n + 1
-        if node.expr2:
-            self.visit(node.expr2)
-            n = n + 1
-        if node.expr3:
-            self.visit(node.expr3)
+        if node.exc:
+            self.visit(node.exc)
             n = n + 1
         self.emit('RAISE_VARARGS', n)
 
