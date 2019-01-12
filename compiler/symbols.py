@@ -28,6 +28,7 @@ class Scope:
         self.frees = {}
         self.cells = {}
         self.children = []
+        self.parent = None
         # nested is true if the class could contain free variables,
         # i.e. if it is nested within another function.
         self.nested = None
@@ -77,6 +78,7 @@ class Scope:
 
     def add_child(self, child):
         self.children.append(child)
+        child.parent = self
 
     def get_children(self):
         return self.children
