@@ -1235,7 +1235,10 @@ class CodeGenerator:
 
     def visitReturn(self, node):
         self.set_lineno(node)
-        self.visit(node.value)
+        if node.value:
+            self.visit(node.value)
+        else:
+            self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 
     def visitYield(self, node):
