@@ -1039,7 +1039,7 @@ class CodeGenerator:
         if VERSION > 1:
             self.emit('LOAD_CONST', level)
             self.emit('LOAD_CONST', fromlist)
-        self.emit('IMPORT_NAME', node.module)
+        self.emit('IMPORT_NAME', node.module or '')
         for alias in node.names:
             name = alias.name
             asname = alias.asname
