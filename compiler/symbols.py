@@ -249,9 +249,19 @@ class SymbolVisitor:
                 or isinstance(parent, GenExprScope):
             scope.nested = 1
 
+        self.visit(node.generators[0].iter, parent)
+
+        if isinstance(node, ast.DictComp):
+            self.visit(node.key, scope)
+            self.visit(node.value, scope)
+        else:
+            self.visit(node.elt, scope)
+
         self.scopes[node] = scope
+        is_outmost = True
         for comp in node.generators:
-            self.visit(comp, scope)
+            self.visit(comp, scope, is_outmost)
+            is_outmost = False
 
         self.handle_free_vars(scope, parent)
 
@@ -262,9 +272,12 @@ class SymbolVisitor:
     visitListComp = visitGeneratorExp
     visitDictComp = visitGeneratorExp
 
-    def visitcomprehension(self, node, scope):
+    def visitcomprehension(self, node, scope, is_outmost):
         self.visit(node.target, scope, 1)
-        self.visit(node.iter, scope)
+        if is_outmost:
+            scope.add_use(".0")
+        else:
+            self.visit(node.iter, scope)
         for if_ in node.ifs:
             self.visit(if_, scope)
 
