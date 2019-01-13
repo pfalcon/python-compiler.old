@@ -188,6 +188,14 @@ def is_constant_false(node):
             return 1
     return 0
 
+
+def is_constant_true(node):
+    if isinstance(node, ast.Num):
+        if node.n:
+            return 1
+    return 0
+
+
 class CodeGenerator:
     """Defines basic code generator for Python bytecode
 
@@ -466,14 +474,16 @@ class CodeGenerator:
         self.setups.push((LOOP, loop))
 
         self.set_lineno(node, force=True)
-        self.visit(node.test)
-        self.emit('POP_JUMP_IF_FALSE', else_ or after)
+        if not is_constant_true(node.test):
+            self.visit(node.test)
+            self.emit('POP_JUMP_IF_FALSE', else_ or after)
 
         self.nextBlock()
         self.visit(node.body)
         self.emit('JUMP_ABSOLUTE', loop)
 
-        self.startBlock(else_) # or just the POPs if not else clause
+        if not is_constant_true(node.test):  # TODO: Workaround for weird block linking implementation
+            self.startBlock(else_ or after) # or just the POPs if not else clause
         self.emit('POP_BLOCK')
         self.setups.pop()
         if node.orelse:
