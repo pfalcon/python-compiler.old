@@ -409,6 +409,9 @@ class SymbolVisitor:
         self.visit(node.value, scope, 0)
         self.visit(node.slice, scope, 0)
 
+    def visitAttribute(self, node, scope, assign=0):
+        self.visit(node.value, scope, 0)
+
     def visitSlice(self, node, scope, assign=0):
         if node.lower:
             self.visit(node.lower, scope, 0)
