@@ -121,13 +121,13 @@ def order_blocks(start_block, exit_block):
     order = []
 
     # Find all the blocks to be emitted.
-    remaining = set()
+    remaining = []
     todo = [start_block]
     while todo:
         b = todo.pop()
         if b in remaining:
             continue
-        remaining.add(b)
+        remaining.append(b)
         for c in b.get_children():
             if c not in remaining:
                 todo.append(c)
@@ -166,7 +166,7 @@ def order_blocks(start_block, exit_block):
     b = start_block
     while 1:
         order.append(b)
-        remaining.discard(b)
+        remaining.remove(b)
         if b.next:
             b = b.next[0]
             continue
