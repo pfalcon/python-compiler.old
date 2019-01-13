@@ -618,9 +618,9 @@ class CodeGenerator:
             self.emit('POP_TOP')
             self.nextBlock(end)
 
-    def _makeClosure(self, gen, args):
-        # Construct qualname prefix
+    def get_qual_prefix(self, gen):
         prefix = ""
+        # Construct qualname prefix
         parent = gen.scope.parent
         while not isinstance(parent, symbols.ModuleScope):
             if isinstance(parent, symbols.FunctionScope):
@@ -628,6 +628,12 @@ class CodeGenerator:
             else:
                 prefix = parent.name + "." + prefix
             parent = parent.parent
+        return prefix
+
+    def _makeClosure(self, gen, args):
+        prefix = ""
+        if not isinstance(gen, ClassCodeGenerator):
+            prefix = self.get_qual_prefix(gen)
 
         frees = gen.scope.get_free_vars()
         if frees:
@@ -1578,7 +1584,7 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
         self.set_lineno(klass)
         self.emit("LOAD_NAME", "__name__")
         self.storeName("__module__")
-        self.emit("LOAD_CONST", self.name)
+        self.emit("LOAD_CONST", self.get_qual_prefix(self) + self.name)
         self.storeName("__qualname__")
         doc = self.get_docstring(klass)
         if doc:
