@@ -976,18 +976,23 @@ class CodeGenerator:
         self.emit('POP_TOP')
 
     def visitNum(self, node):
+        self.set_lineno(node)
         self.emit('LOAD_CONST', node.n)
 
     def visitStr(self, node):
+        self.set_lineno(node)
         self.emit('LOAD_CONST', node.s)
 
     def visitBytes(self, node):
+        self.set_lineno(node)
         self.emit('LOAD_CONST', node.s)
 
     def visitNameConstant(self, node):
+        self.set_lineno(node)
         self.emit('LOAD_CONST', node.value)
 
     def visitConst(self, node):
+        self.set_lineno(node)
         self.emit('LOAD_CONST', node.value)
 
     def visitKeyword(self, node):
