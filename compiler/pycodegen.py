@@ -351,6 +351,10 @@ class CodeGenerator:
             return True
         return False
 
+    def get_docstring(self, node):
+        if isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Str):
+            return node.body[0].value.s
+
     def skip_docstring(self, body):
         """Given list of statements, representing body of a function, class,
         or module, skip docstring, if any.
@@ -371,7 +375,7 @@ class CodeGenerator:
         self.scopes = self.parseSymbols(node)
         self.scope = self.scopes[node]
         self.emit('SET_LINENO', 0)
-        doc = ast.get_docstring(node)
+        doc = self.get_docstring(node)
         if doc:
             self.set_lineno(node.body[0])
             self.emit('LOAD_CONST', doc)
@@ -1469,7 +1473,7 @@ class AbstractFunctionCode:
         self.super_init()
 
         if not isLambda:
-            doc = ast.get_docstring(func)
+            doc = self.get_docstring(func)
             if doc:
                 self.setDocstring(doc)
 
@@ -1547,7 +1551,7 @@ class AbstractClassCode:
         lnf = walk(klass.body, self.NameFinder(), verbose=0)
         self.locals.push(lnf.getLocals())
         self.graph.setFlag(CO_NEWLOCALS)
-        doc = ast.get_docstring(klass)
+        doc = self.get_docstring(klass)
         if doc:
             self.setDocstring(doc)
 
@@ -1576,7 +1580,7 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
         self.storeName("__module__")
         self.emit("LOAD_CONST", self.name)
         self.storeName("__qualname__")
-        doc = ast.get_docstring(klass)
+        doc = self.get_docstring(klass)
         if doc:
             self.set_lineno(klass.body[0])
             self.emit("LOAD_CONST", doc)
