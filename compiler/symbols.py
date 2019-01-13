@@ -336,6 +336,7 @@ class SymbolVisitor:
         if doc is not None:
             scope.add_def('__doc__')
         scope.add_def('__module__')
+        scope.add_def('__qualname__')
         self.scopes[node] = scope
         prev = self.klass
         self.klass = node.name
