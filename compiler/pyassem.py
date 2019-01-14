@@ -748,6 +748,8 @@ class StackDepthTracker:
         'SETUP_FINALLY': 3,
         'FOR_ITER': 1,
         'WITH_CLEANUP': -1,
+        'JUMP_IF_TRUE_OR_POP': -1, # approximation
+        'JUMP_IF_FALSE_OR_POP': -1, # approximation
         }
     # use pattern match
     patterns = [
