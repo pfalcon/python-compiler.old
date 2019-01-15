@@ -450,12 +450,12 @@ class CodeGenerator:
         if is_constant_false(test):
             # XXX will need to check generator stuff here
             return
-        end = self.newBlock()
+        end = self.newBlock("if_end")
         self.set_lineno(test)
         self.visit(test)
         orelse = None
         if node.orelse:
-            orelse = self.newBlock()
+            orelse = self.newBlock("if_else")
         self.emit('POP_JUMP_IF_FALSE', orelse or end)
         self.nextBlock()
         self.visit(node.body)
