@@ -182,6 +182,19 @@ class LocalNameFinder:
         if isinstance(node.ctx, ast.Store):
             self.names.add(node.id)
 
+
+def get_bool_const(node):
+    """Return True if node represent constantly true value, False if
+    constantly false value, and None otherwise (non-constant)."""
+    if isinstance(node, ast.Num):
+        return bool(node.n)
+    if isinstance(node, ast.NameConstant):
+        return bool(node.value)
+    if isinstance(node, ast.Name):
+        if node.id == "__debug__":
+            return True
+
+
 def is_constant_false(node):
     if isinstance(node, ast.Num):
         if not node.n:
@@ -447,16 +460,20 @@ class CodeGenerator:
 
     def visitIf(self, node):
         test = node.test
-        if is_constant_false(test):
+        test_const = get_bool_const(test)
+        if test_const == False:
+            self.set_lineno(test)
             # XXX will need to check generator stuff here
             return
         end = self.newBlock("if_end")
-        self.set_lineno(test)
-        self.visit(test)
+        if test_const != True:
+            self.set_lineno(test)
+            self.visit(test)
         orelse = None
         if node.orelse:
             orelse = self.newBlock("if_else")
-        self.emit('POP_JUMP_IF_FALSE', orelse or end)
+        if test_const != True:
+            self.emit('POP_JUMP_IF_FALSE', orelse or end)
         self.nextBlock()
         self.visit(node.body)
         if node.orelse:
