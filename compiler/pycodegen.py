@@ -1583,7 +1583,10 @@ class AbstractClassCode:
 
     def finish(self):
         self.graph.startExitBlock()
-        self.emit('LOAD_CONST', None)
+        if self.scope.check_name('__class__') == SC_CELL:
+            self.emit('LOAD_CLOSURE', '__class__')
+        else:
+            self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 
 class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):

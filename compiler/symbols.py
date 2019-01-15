@@ -111,7 +111,10 @@ class Scope:
 
     def get_free_vars(self):
         if not self.nested:
-            return ()
+            assert len(self.frees) <= 1
+            if self.frees:
+                assert "__class__" in self.frees
+            return sorted(self.frees)
         free = {}
         free.update(self.frees)
         for name in self.uses.keys():
@@ -236,6 +239,7 @@ class SymbolVisitor:
         for n in node.args.defaults:
             self.visit(n, parent)
         scope = FunctionScope(node.name, self.module, self.klass)
+        scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
         self.scopes[node] = scope
@@ -355,6 +359,18 @@ class SymbolVisitor:
             scope.add_def(node.id)
         else:
             scope.add_use(node.id)
+            if node.id == "super" and isinstance(scope, FunctionScope) \
+               and isinstance(scope.parent, ClassScope):
+                # If super() is used, and special cell var __class__ to class
+                # definition, and free var to the method. This is complicated
+                # by the fact that original Python2 implementation supports
+                # free->cell var relationship only if free var is defined in
+                # a scope marked as "nested", which normal method in a class
+                # isn't.
+                # TODO: Check that super() takes no args.
+                scope.parent.add_def("__class__")
+                scope.add_use("__class__")
+                scope.frees["__class__"] = 1
 
     # operations that bind new names
 
