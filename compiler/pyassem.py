@@ -26,11 +26,21 @@ else:
 
 class FlowGraph:
     def __init__(self):
-        self.current = self.entry = Block()
+        # List of blocks in the order they should be output for linear
+        # code. As we deal with structured code, this order corresponds
+        # to the order of source level constructs. (The original
+        # implementation from Python2 used a complex ordering algorithm
+        # which more buggy and erratic than useful.)
+        self.ordered_blocks = []
+        # Current block being filled in with instructions.
+        self.current = None
+        self.entry = Block("entry")
         self.exit = Block("exit")
-        self.blocks = misc.Set()
-        self.blocks.add(self.entry)
-        self.blocks.add(self.exit)
+        self.startBlock(self.entry)
+
+        # Was replaced with ordered_blocks
+        #self.blocks = misc.Set()
+        #self.blocks.add(self.entry)
 
     def startBlock(self, block):
         if self._debug:
@@ -41,6 +51,11 @@ class FlowGraph:
                 print("   ", self.current.get_children())
             print(repr(block))
         self.current = block
+        if block and block not in self.ordered_blocks:
+            if block is self.exit:
+                if self.ordered_blocks and self.ordered_blocks[-1].has_return():
+                    return
+            self.ordered_blocks.append(block)
 
     def nextBlock(self, block=None, label=""):
         # XXX think we need to specify when there is implicit transfer
@@ -68,7 +83,7 @@ class FlowGraph:
 
     def newBlock(self, label=""):
         b = Block(label)
-        self.blocks.add(b)
+        #self.blocks.add(b)
         return b
 
     def startExitBlock(self):
@@ -94,11 +109,14 @@ class FlowGraph:
 
         i.e. each node appears before all of its successors
         """
-        order = order_blocks(self.entry, self.exit)
-        return order
+        return self.ordered_blocks
 
     def getBlocks(self):
-        return self.blocks.elements()
+        if self.exit not in self.ordered_blocks:
+            return self.ordered_blocks + [self.exit]
+        return self.ordered_blocks
+
+        #return self.blocks.elements()
 
     def getRoot(self):
         """Return nodes appropriate for use with dominator"""
