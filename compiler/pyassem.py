@@ -441,16 +441,6 @@ class PyFlowGraph(FlowGraph):
         self.stage = CONV
 
     def sort_cellvars(self):
-        """Sort cellvars in the order of varnames and prune from freevars.
-        """
-        cells = {}
-        for name in self.cellvars:
-            cells[name] = 1
-        self.cellvars = [name for name in self.varnames
-                         if name in cells]
-        for name in self.cellvars:
-            del cells[name]
-        self.cellvars = self.cellvars + sorted(cells.keys())
         self.closure = self.cellvars + self.freevars
 
     def _lookupName(self, name, list):
