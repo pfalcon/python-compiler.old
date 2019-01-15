@@ -42,7 +42,7 @@ class FlowGraph:
             print(repr(block))
         self.current = block
 
-    def nextBlock(self, block=None):
+    def nextBlock(self, block=None, label=""):
         # XXX think we need to specify when there is implicit transfer
         # from one block to the next.  might be better to represent this
         # with explicit JUMP_ABSOLUTE instructions that are optimized
@@ -55,7 +55,7 @@ class FlowGraph:
         # immediately after its parent.
         # Worry: maintaining this invariant could be tricky
         if block is None:
-            block = self.newBlock()
+            block = self.newBlock(label=label)
 
         # Note: If the current block ends with an unconditional control
         # transfer, then it is techically incorrect to add an implicit
