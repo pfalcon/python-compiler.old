@@ -468,10 +468,10 @@ class CodeGenerator:
     def visitWhile(self, node):
         self.set_lineno(node)
 
-        loop = self.newBlock()
-        else_ = self.newBlock()
+        loop = self.newBlock("while_loop")
+        else_ = self.newBlock("while_else")
 
-        after = self.newBlock()
+        after = self.newBlock("while_after")
         self.emit('SETUP_LOOP', after)
 
         self.nextBlock(loop)
