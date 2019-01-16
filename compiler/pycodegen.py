@@ -886,6 +886,8 @@ class CodeGenerator:
                 next = self.newBlock()
                 self.emit('POP_JUMP_IF_FALSE', next)
                 self.nextBlock()
+            else:
+                self.set_lineno(handler)
             self.emit('POP_TOP')
             if target:
                 self.visit(ast.Name(id=target, ctx=ast.Store()))
