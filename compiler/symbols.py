@@ -466,7 +466,8 @@ class SymbolVisitor:
         self.visit(node.body, scope)
         # Handle exception capturing vars
         for handler in node.handlers:
-            self.visit(handler.type, scope)
+            if handler.type:
+                self.visit(handler.type, scope)
             if handler.name:
                 scope.add_def(handler.name)
             self.visit(handler.body, scope)
