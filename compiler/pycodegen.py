@@ -1230,6 +1230,7 @@ class CodeGenerator:
         for arg in node.args:
             if isinstance(arg, ast.Starred):
                 star_args = arg
+                self.visit(star_args)
             else:
                 self.visit(arg)
                 pos = pos + 1
@@ -1237,15 +1238,12 @@ class CodeGenerator:
         for kwarg in node.keywords:
             if kwarg.arg is None:
                 dstar_args = kwarg.value
+                self.visit(dstar_args)
             else:
                 self.emit('LOAD_CONST', kwarg.arg)
                 self.visit(kwarg.value)
                 kw = kw + 1
 
-        if star_args is not None:
-            self.visit(star_args)
-        if dstar_args is not None:
-            self.visit(dstar_args)
         have_star = star_args is not None
         have_dstar = dstar_args is not None
         opcode = callfunc_opcode_info[have_star, have_dstar]
