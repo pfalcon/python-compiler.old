@@ -446,7 +446,7 @@ class PyFlowGraph(FlowGraph):
         # (Other types of code objects deal with docstrings in different
         # manner, e.g. lambdas and comprehensions don't have docstrings,
         # classes store them as __doc__ attribute.
-        if not self.name.startswith("<") and not self.klass:
+        if self.name == "<lambda>" or (not self.name.startswith("<") and not self.klass):
             self.consts.insert(0, self.docstring)
         self.sort_cellvars()
         for i in range(len(self.insts)):
