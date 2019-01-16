@@ -485,6 +485,10 @@ class CodeGenerator:
     def visitWhile(self, node):
         self.set_lineno(node)
 
+        test_const = get_bool_const(node.test)
+        if test_const == False:
+            return
+
         loop = self.newBlock("while_loop")
         else_ = self.newBlock("while_else")
 
@@ -495,7 +499,7 @@ class CodeGenerator:
         self.setups.push((LOOP, loop))
 
         self.set_lineno(node, force=True)
-        if not is_constant_true(node.test):
+        if test_const != True:
             self.visit(node.test)
             self.emit('POP_JUMP_IF_FALSE', else_ or after)
 
