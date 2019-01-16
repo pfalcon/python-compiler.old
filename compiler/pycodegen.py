@@ -618,11 +618,11 @@ class CodeGenerator:
     def visitCompare(self, node):
         self.visit(node.left)
         cleanup = self.newBlock()
-        for op, code in node.ops[:-1]:
+        for op, code in zip(node.ops[:-1], node.comparators[:-1]):
             self.visit(code)
             self.emit('DUP_TOP')
             self.emit('ROT_THREE')
-            self.emit('COMPARE_OP', op)
+            self.emit('COMPARE_OP', self._cmp_opcode[type(op)])
             self.emit('JUMP_IF_FALSE_OR_POP', cleanup)
             self.nextBlock()
         # now do the last comparison
