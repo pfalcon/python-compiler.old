@@ -1284,6 +1284,13 @@ class CodeGenerator:
             self.emit('LOAD_CONST', None)
         self.emit('YIELD_VALUE')
 
+    def visitYieldFrom(self, node):
+        self.set_lineno(node)
+        self.visit(node.value)
+        self.emit('GET_YIELD_FROM_ITER')
+        self.emit('LOAD_CONST', None)
+        self.emit('YIELD_FROM')
+
     # slice and subscript stuff
 
     def visitSubscript(self, node, aug_flag=None):
