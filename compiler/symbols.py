@@ -355,7 +355,7 @@ class SymbolVisitor:
     # expressions contained within statements may have the assign arg.
 
     def visitName(self, node, scope, assign=0):
-        if assign:
+        if assign or isinstance(node.ctx, ast.Store):
             scope.add_def(node.id)
         else:
             scope.add_use(node.id)
