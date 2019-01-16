@@ -899,8 +899,11 @@ class CodeGenerator:
                 )
                 self.visitTryFinally(protected, except_protect=True)
             else:
+                # "block" param shouldn't matter, so just pass None
+                self.setups.push((EXCEPT, None))
                 self.visit(body)
                 self.emit('POP_EXCEPT')
+                self.setups.pop()
 
             self.emit('JUMP_FORWARD', end)
             if expr:
