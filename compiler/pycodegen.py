@@ -1227,8 +1227,11 @@ class CodeGenerator:
         self.visit(node.func)
         star_args = None
         dstar_args = None
-        for arg in node.args:
+        for i in range(len(node.args)):
+            arg = node.args[i]
             if isinstance(arg, ast.Starred):
+                # TODO: Implement arbitrary arg unpacking, as introduced in Py3.5
+                assert i == len(node.args) - 1
                 star_args = arg
                 self.visit(star_args)
             else:
