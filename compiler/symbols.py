@@ -64,6 +64,9 @@ class Scope:
                   (name, self.name))
         self.explicit_globals[name] = 1
         self.module.add_def(name)
+        # Seems to be behavior of Py3.5, "global foo" sets foo as
+        # explicit global for module too
+        self.module.explicit_globals[name] = 1
 
     def add_free(self, name):
         self.add_frees([name])
