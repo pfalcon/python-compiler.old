@@ -293,13 +293,14 @@ DONE = "DONE"
 class PyFlowGraph(FlowGraph):
     super_init = FlowGraph.__init__
 
-    def __init__(self, name, filename, args=(), optimized=0, klass=None):
+    def __init__(self, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None):
         self.super_init()
         self.name = name
         self.filename = filename
         self.docstring = None
-        self.args = args # XXX
-        self.argcount = getArgCount(args)
+        self.args = args
+        self.kwonlyargs = kwonlyargs
+        self.starargs = starargs
         self.klass = klass
         if optimized:
             self.flags = CO_OPTIMIZED | CO_NEWLOCALS
@@ -316,11 +317,7 @@ class PyFlowGraph(FlowGraph):
         # The offsets used by LOAD_CLOSURE/LOAD_DEREF refer to both
         # kinds of variables.
         self.closure = []
-        self.varnames = list(args) or []
-        for i in range(len(self.varnames)):
-            var = self.varnames[i]
-            if isinstance(var, TupleArg):
-                self.varnames[i] = var.getName()
+        self.varnames = list(args) + list(kwonlyargs) + list(starargs)
         self.stage = RAW
 
     def setDocstring(self, doc):
@@ -562,14 +559,8 @@ class PyFlowGraph(FlowGraph):
         else:
             nlocals = len(self.varnames)
 
-        argcount = self.argcount
-        # argcount it code object doesn't count varargs and kwargs
-        if self.flags & CO_VARARGS:
-            argcount = argcount - 1
-        if self.flags & CO_VARKEYWORDS:
-            argcount = argcount - 1
-
-        return CodeType(argcount, 0, nlocals, self.stacksize, self.flags,
+        return CodeType(len(self.args), len(self.kwonlyargs), nlocals,
+                        self.stacksize, self.flags,
                         self.lnotab.getCode(), self.getConsts(),
                         tuple(self.names), tuple(self.varnames),
                         self.filename, self.name, self.lnotab.firstline,

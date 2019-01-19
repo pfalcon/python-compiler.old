@@ -434,7 +434,16 @@ class CodeGenerator:
         self.set_lineno(node)
         for default in node.args.defaults:
             self.visit(default)
-        self._makeClosure(gen, len(node.args.defaults))
+
+        kwdefaults_num = 0
+        for kwonly, default in zip(node.args.kwonlyargs, node.args.kw_defaults):
+            if default is not None:
+                self.emit('LOAD_CONST', kwonly.arg)
+                self.visit(default)
+                kwdefaults_num += 1
+
+        self._makeClosure(gen, kwdefaults_num << 8 | len(node.args.defaults))
+
         for i in range(ndecorators):
             self.emit('CALL_FUNCTION', 1)
 
@@ -704,7 +713,8 @@ class CodeGenerator:
         node.args = Holder()
         arg1 = Holder()
         arg1.arg = ".0"
-        node.args.args = [arg1]
+        node.args.args = (arg1,)
+        node.args.kwonlyargs = ()
         node.args.vararg = None
         node.args.kwarg = None
         node.body = []
@@ -1501,14 +1511,20 @@ class AbstractFunctionCode:
         self.name = name
 
         args = [elt.arg for elt in func.args.args]
+        kwonlyargs = [elt.arg for elt in func.args.kwonlyargs]
 
+        starargs = []
         if func.args.vararg:
-            args.append(func.args.vararg.arg)
+            starargs.append(func.args.vararg.arg)
         if func.args.kwarg:
-            args.append(func.args.kwarg.arg)
+            starargs.append(func.args.kwarg.arg)
+
         filename = mod.filename
-        self.graph = pyassem.PyFlowGraph(name, filename, args,
-                                         optimized=1)
+        self.graph = pyassem.PyFlowGraph(
+            name, filename,
+            args=args, kwonlyargs=kwonlyargs, starargs=starargs,
+            optimized=1
+        )
         self.isLambda = isLambda
         self.super_init()
 
