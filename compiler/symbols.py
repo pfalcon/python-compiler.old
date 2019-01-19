@@ -24,6 +24,7 @@ class Scope:
         self.defs = {}
         self.uses = {}
         self.globals = {}
+        self.explicit_globals = {}
         self.params = {}
         self.frees = {}
         self.cells = {}
@@ -61,7 +62,7 @@ class Scope:
         if name in self.params:
             raise SyntaxError("%s in %s is global and parameter" % \
                   (name, self.name))
-        self.globals[name] = 1
+        self.explicit_globals[name] = 1
         self.module.add_def(name)
 
     def add_free(self, name):
@@ -89,6 +90,7 @@ class Scope:
     def DEBUG(self):
         print(self.name, self.nested and "nested" or "")
         print("\tglobals: ", self.globals)
+        print("\texplicit_globals: ", self.explicit_globals)
         print("\tcells: ", self.cells)
         print("\tdefs: ", self.defs)
         print("\tuses: ", self.uses)
@@ -99,8 +101,10 @@ class Scope:
 
         The scope of a name could be LOCAL, GLOBAL, FREE, or CELL.
         """
-        if name in self.globals:
+        if name in self.explicit_globals:
             return SC_GLOBAL_EXPLICIT
+        if name in self.globals:
+            return SC_GLOBAL_IMPLICIT
         if name in self.cells:
             return SC_CELL
         if name in self.frees:
