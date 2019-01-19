@@ -509,6 +509,7 @@ class PyFlowGraph(FlowGraph):
         return self._lookupName(arg, self.closure)
     _convert_LOAD_DEREF = _convert_DEREF
     _convert_STORE_DEREF = _convert_DEREF
+    _convert_DELETE_DEREF = _convert_DEREF
     _convert_LOAD_CLASSDEREF = _convert_DEREF
 
     def _convert_LOAD_CLOSURE(self, arg):
