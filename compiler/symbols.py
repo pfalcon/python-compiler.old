@@ -216,7 +216,7 @@ class LambdaScope(FunctionScope):
     def __init__(self, module, klass=None):
         i = self.__counter
         self.__counter += 1
-        self.__super_init("lambda.%d" % i, module, klass)
+        self.__super_init("<lambda>", module, klass)
 
 class ClassScope(Scope):
     __super_init = Scope.__init__
