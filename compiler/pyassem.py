@@ -38,6 +38,12 @@ class FlowGraph:
         self.exit = Block("exit")
         self.startBlock(self.entry)
 
+        # Source line number to use for next instruction.
+        self.lineno = 0
+        # Whether line number was already output (set to False to output
+        # new line number).
+        self.lineno_set = False
+
         # Was replaced with ordered_blocks
         #self.blocks = misc.Set()
         #self.blocks.add(self.entry)
@@ -98,6 +104,9 @@ class FlowGraph:
         self._debug = 0
 
     def emit(self, *inst):
+        if not self.lineno_set:
+            self.lineno_set = True
+            self.emit('SET_LINENO', self.lineno)
         if self._debug:
             print("\t", inst)
         if len(inst) == 2 and isinstance(inst[1], Block):
