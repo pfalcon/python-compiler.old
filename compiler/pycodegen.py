@@ -494,25 +494,26 @@ class CodeGenerator:
     def visitIf(self, node):
         test = node.test
         test_const = get_bool_const(test)
-        if test_const == False:
-            self.set_lineno(test)
-            # XXX will need to check generator stuff here
-            return
         end = self.newBlock("if_end")
-        if test_const != True:
-            self.set_lineno(test)
-            self.visit(test)
         orelse = None
         if node.orelse:
             orelse = self.newBlock("if_else")
-        if test_const != True:
+
+        if test_const is None:
+            self.visit(test)
             self.emit('POP_JUMP_IF_FALSE', orelse or end)
-        self.nextBlock()
-        self.visit(node.body)
+
+        if test_const != False:
+            self.nextBlock()
+            self.visit(node.body)
+
         if node.orelse:
-            self.emit('JUMP_FORWARD', end)
-            self.startBlock(orelse)
-            self.visit(node.orelse)
+            if test_const is None:
+                self.emit('JUMP_FORWARD', end)
+            if test_const != True:
+                self.startBlock(orelse)
+                self.visit(node.orelse)
+
         self.nextBlock(end)
 
     def visitWhile(self, node):
