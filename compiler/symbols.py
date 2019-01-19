@@ -198,10 +198,10 @@ class GenExprScope(Scope):
 
     __counter = 1
 
-    def __init__(self, module, klass=None):
+    def __init__(self, module, klass=None, name="<genexpr>"):
         i = self.__counter
         self.__counter += 1
-        self.__super_init("generator expression<%d>"%i, module, klass)
+        self.__super_init(name, module, klass)
         self.add_param('.0')
 
     def get_names(self):
@@ -252,8 +252,15 @@ class SymbolVisitor:
         self.visit(node.body, scope)
         self.handle_free_vars(scope, parent)
 
+    _scope_names = {
+        ast.GeneratorExp: "<genexpr>",
+        ast.ListComp: "<listcomp>",
+        ast.DictComp: "<dictcomp>",
+        ast.SetComp: "<setcomp>",
+    }
+
     def visitGeneratorExp(self, node, parent, assign=0):
-        scope = GenExprScope(self.module, self.klass);
+        scope = GenExprScope(self.module, self.klass, name=self._scope_names[type(node)])
         if parent.nested or isinstance(parent, FunctionScope) \
                 or isinstance(parent, GenExprScope):
             scope.nested = 1
