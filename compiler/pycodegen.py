@@ -448,6 +448,9 @@ class CodeGenerator:
             self.emit('CALL_FUNCTION', 1)
 
     def visitClassDef(self, node):
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+
         gen = self.ClassGen(node, self.scopes,
                             self.get_module())
         walk(self.skip_docstring(node.body), gen)
@@ -461,6 +464,10 @@ class CodeGenerator:
             self.visit(base)
             args += 1
         self.emit('CALL_FUNCTION', args)
+
+        for i in range(len(node.decorator_list)):
+            self.emit('CALL_FUNCTION', 1)
+
         self.storeName(node.name)
 
     # The rest are standard visitor methods
