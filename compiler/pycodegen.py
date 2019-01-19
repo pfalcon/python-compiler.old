@@ -393,7 +393,7 @@ class CodeGenerator:
         self.scope = self.scopes[node]
         self.emit('SET_LINENO', 0)
         doc = self.get_docstring(node)
-        if doc:
+        if doc is not None:
             self.set_lineno(node.body[0])
             self.emit('LOAD_CONST', doc)
             self.storeName('__doc__')
@@ -1584,7 +1584,7 @@ class AbstractFunctionCode:
 
         if not isLambda:
             doc = self.get_docstring(func)
-            if doc:
+            if doc is not None:
                 self.setDocstring(doc)
 
         lnf = walk(func.body, self.NameFinder(args), verbose=0)
@@ -1662,7 +1662,7 @@ class AbstractClassCode:
         self.locals.push(lnf.getLocals())
         self.graph.setFlag(CO_NEWLOCALS)
         doc = self.get_docstring(klass)
-        if doc:
+        if doc is not None:
             self.setDocstring(doc)
 
     def get_module(self):
@@ -1694,7 +1694,7 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
         self.emit("LOAD_CONST", self.get_qual_prefix(self) + self.name)
         self.storeName("__qualname__")
         doc = self.get_docstring(klass)
-        if doc:
+        if doc is not None:
             self.set_lineno(klass.body[0])
             self.emit("LOAD_CONST", doc)
             self.storeName('__doc__')
