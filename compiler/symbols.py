@@ -64,6 +64,9 @@ class Scope:
         self.globals[name] = 1
         self.module.add_def(name)
 
+    def add_free(self, name):
+        self.add_frees([name])
+
     def add_param(self, name):
         name = self.mangle(name)
         self.defs[name] = 1
@@ -100,6 +103,8 @@ class Scope:
             return SC_GLOBAL_EXPLICIT
         if name in self.cells:
             return SC_CELL
+        if name in self.frees:
+            return SC_FREE
         if name in self.defs:
             return SC_LOCAL
         if self.nested and (name in self.frees or name in self.uses):
@@ -401,6 +406,11 @@ class SymbolVisitor:
     def visitGlobal(self, node, scope):
         for name in node.names:
             scope.add_global(name)
+
+    def visitNonlocal(self, node, scope):
+        # TODO: Check that var exists in outer scope
+        for name in node.names:
+            scope.add_free(name)
 
     def visitAssign(self, node, scope):
         """Propagate assignment flag down to child nodes.
