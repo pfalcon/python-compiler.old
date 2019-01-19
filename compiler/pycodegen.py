@@ -1394,9 +1394,12 @@ class CodeGenerator:
 
     def visitList(self, node):
         self.set_lineno(node)
+        if isinstance(node.ctx, ast.Store):
+            self.emit('UNPACK_SEQUENCE', len(node.elts))
         for elt in node.elts:
             self.visit(elt)
-        self.emit('BUILD_LIST', len(node.elts))
+        if isinstance(node.ctx, ast.Load):
+            self.emit('BUILD_LIST', len(node.elts))
 
     def visitSet(self, node):
         self.set_lineno(node)
