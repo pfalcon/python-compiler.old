@@ -1406,10 +1406,26 @@ class CodeGenerator:
     def visitEllipsis(self, node):
         self.emit('LOAD_CONST', Ellipsis)
 
+    def _visitUnpack(self, node):
+        before = 0
+        after = 0
+        starred = None
+        for elt in node.elts:
+            if isinstance(elt, ast.Starred):
+                starred = elt.value
+            elif starred:
+                after += 1
+            else:
+                before += 1
+        if starred:
+            self.emit('UNPACK_EX', after << 8 | before)
+        else:
+            self.emit('UNPACK_SEQUENCE', before)
+
     def visitTuple(self, node):
         self.set_lineno(node)
         if isinstance(node.ctx, ast.Store):
-            self.emit('UNPACK_SEQUENCE', len(node.elts))
+            self._visitUnpack(node)
         for elt in node.elts:
             self.visit(elt)
         if isinstance(node.ctx, ast.Load):
@@ -1418,7 +1434,7 @@ class CodeGenerator:
     def visitList(self, node):
         self.set_lineno(node)
         if isinstance(node.ctx, ast.Store):
-            self.emit('UNPACK_SEQUENCE', len(node.elts))
+            self._visitUnpack(node)
         for elt in node.elts:
             self.visit(elt)
         if isinstance(node.ctx, ast.Load):
