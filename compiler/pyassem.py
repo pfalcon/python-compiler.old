@@ -43,6 +43,11 @@ class FlowGraph:
         # Whether line number was already output (set to False to output
         # new line number).
         self.lineno_set = False
+        # First line of this code block. This field is expected to be set
+        # externally and serve as a reference for generating all other
+        # line numbers in the code block. (If it's not set, it will be
+        # deduced).
+        self.firstline = 0
 
         # Was replaced with ordered_blocks
         #self.blocks = misc.Set()
@@ -540,6 +545,7 @@ class PyFlowGraph(FlowGraph):
     def makeByteCode(self):
         assert self.stage == CONV
         self.lnotab = lnotab = LineAddrTable()
+        lnotab.setFirstLine(self.firstline or 1)
         for t in self.insts:
             opname = t[0]
             if len(t) == 1:
@@ -570,11 +576,16 @@ class PyFlowGraph(FlowGraph):
         else:
             nlocals = len(self.varnames)
 
+        firstline = self.firstline
+        # If no real instruction, fallback to 1
+        if not firstline:
+            firstline = 1
+
         return CodeType(len(self.args), len(self.kwonlyargs), nlocals,
                         self.stacksize, self.flags,
                         self.lnotab.getCode(), self.getConsts(),
                         tuple(self.names), tuple(self.varnames),
-                        self.filename, self.name, self.lnotab.firstline,
+                        self.filename, self.name, firstline,
                         self.lnotab.getTable(), tuple(self.freevars),
                         tuple(self.cellvars))
 
@@ -641,6 +652,10 @@ class LineAddrTable:
         self.lastline = 0
         self.lastoff = 0
         self.lnotab = []
+
+    def setFirstLine(self, lineno):
+        self.firstline = lineno
+        self.lastline = lineno
 
     def addCode(self, *args):
         for arg in args:

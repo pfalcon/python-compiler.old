@@ -1579,7 +1579,7 @@ class AbstractFunctionCode:
             self.graph.setFlag(CO_VARARGS)
         if func.args.kwarg:
             self.graph.setFlag(CO_VARKEYWORDS)
-        self.set_lineno(func)
+        self.graph.firstline = func.lineno
 
     def get_module(self):
         return self.module
@@ -1650,6 +1650,7 @@ class AbstractClassCode:
         doc = self.get_docstring(klass)
         if doc is not None:
             self.setDocstring(doc)
+        self.graph.firstline = klass.lineno
 
     def get_module(self):
         return self.module
