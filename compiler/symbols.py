@@ -247,7 +247,7 @@ class SymbolVisitor:
         self.visit(node.body, scope)
         self.handle_free_vars(scope, parent)
 
-    def visitGeneratorExp(self, node, parent):
+    def visitGeneratorExp(self, node, parent, assign=0):
         scope = GenExprScope(self.module, self.klass);
         if parent.nested or isinstance(parent, FunctionScope) \
                 or isinstance(parent, GenExprScope):
