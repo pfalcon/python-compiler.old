@@ -320,7 +320,10 @@ class CodeGenerator:
             else:
                 self.emit(prefix + '_GLOBAL', name)
         elif scope == SC_FREE or scope == SC_CELL:
-            self.emit(prefix + '_DEREF', name)
+            if isinstance(self.scope, symbols.ClassScope) and prefix == "LOAD":
+                self.emit(prefix + '_CLASSDEREF', name)
+            else:
+                self.emit(prefix + '_DEREF', name)
         else:
             raise RuntimeError("unsupported scope for var %s: %d" % \
                   (name, scope))
