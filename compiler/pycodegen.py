@@ -340,32 +340,14 @@ class CodeGenerator:
         else:
             self.emit(prefix + '_NAME', name)
 
-    # The set_lineno() function and the explicit emit() calls for
-    # SET_LINENO below are only used to generate the line number table.
-    # As of Python 2.3, the interpreter does not have a SET_LINENO
-    # instruction.  pyassem treats SET_LINENO opcodes as a special case.
+    def set_lineno(self, node):
+        if hasattr(node, "lineno"):
+            self.graph.lineno = node.lineno
+            self.graph.lineno_set = False
 
-    def set_lineno(self, node, force=False):
-        """Emit SET_LINENO if necessary.
-
-        The instruction is considered necessary if the node has a
-        lineno attribute and it is different than the last lineno
-        emitted.
-
-        Returns true if SET_LINENO was emitted.
-
-        There are no rules for when an AST node should have a lineno
-        attribute.  The transformer and AST code need to be reviewed
-        and a consistent policy implemented and documented.  Until
-        then, this method works around missing line numbers.
-        """
-        lineno = getattr(node, 'lineno', None)
-        if lineno is not None and (lineno != self.last_lineno
-                                   or force):
-            self.emit('SET_LINENO', lineno)
-            self.last_lineno = lineno
-            return True
-        return False
+    def update_lineno(self, node):
+        if hasattr(node, "lineno") and node.lineno > self.graph.lineno:
+            self.set_lineno(node)
 
     def get_docstring(self, node):
         if node.body and isinstance(node.body[0], ast.Expr) \
@@ -404,13 +386,13 @@ class CodeGenerator:
         self.emit('RETURN_VALUE')
 
     def visitExpression(self, node):
-        self.set_lineno(node)
         self.scopes = self.parseSymbols(node)
         self.scope = self.scopes[node]
         self.visit(node.body)
         self.emit('RETURN_VALUE')
 
     def visitFunctionDef(self, node):
+        self.set_lineno(node)
         self._visitFuncOrLambda(node, isLambda=0)
         # Handled by AbstractFunctionCode?
         #if node.doc:
@@ -418,6 +400,7 @@ class CodeGenerator:
         self.storeName(node.name)
 
     def visitLambda(self, node):
+        self.update_lineno(node)
         self._visitFuncOrLambda(node, isLambda=1)
 
     def _visitFuncOrLambda(self, node, isLambda=0):
@@ -435,7 +418,6 @@ class CodeGenerator:
             body = self.skip_docstring(body)
         walk(body, gen)
         gen.finish()
-        self.set_lineno(node)
         for default in node.args.defaults:
             self.visit(default)
 
@@ -492,6 +474,7 @@ class CodeGenerator:
     # The next few implement control-flow statements
 
     def visitIf(self, node):
+        self.set_lineno(node)
         test = node.test
         test_const = get_bool_const(test)
         end = self.newBlock("if_end")
@@ -532,7 +515,6 @@ class CodeGenerator:
         self.nextBlock(loop)
         self.setups.push((LOOP, loop))
 
-        self.set_lineno(node, force=True)
         if test_const != True:
             self.visit(node.test)
             self.emit('POP_JUMP_IF_FALSE', else_ or after)
@@ -561,7 +543,6 @@ class CodeGenerator:
         self.emit('GET_ITER')
 
         self.nextBlock(start)
-        self.set_lineno(node, force=1)
         self.emit('FOR_ITER', anchor)
         self.visit(node.target)
         self.visit(node.body)
@@ -584,13 +565,12 @@ class CodeGenerator:
         if not self.setups:
             raise SyntaxError("'continue' outside loop (%s, %d)" % \
                   (node.filename, node.lineno))
+        self.set_lineno(node)
         kind, block = self.setups.top()
         if kind == LOOP:
-            self.set_lineno(node)
             self.emit('JUMP_ABSOLUTE', block)
             self.nextBlock()
         elif kind == EXCEPT or kind == TRY_FINALLY:
-            self.set_lineno(node)
             # find the block that starts the loop
             top = len(self.setups)
             while top > 0:
@@ -650,6 +630,7 @@ class CodeGenerator:
         self.nextBlock(endblock)
 
     def visitCompare(self, node):
+        self.update_lineno(node)
         self.visit(node.left)
         cleanup = self.newBlock()
         for op, code in zip(node.ops[:-1], node.comparators[:-1]):
@@ -793,7 +774,7 @@ class CodeGenerator:
             self.emit('GET_ITER')
 
         self.nextBlock(start)
-        self.set_lineno(node, force=True)
+        self.set_lineno(node)
         self.emit('FOR_ITER', anchor)
         self.nextBlock()
         self.visit(node.target)
@@ -837,7 +818,7 @@ class CodeGenerator:
             self.emit('LOAD_CONST', None)
 
     def _visitCompIf(self, node, branch):
-        self.set_lineno(node, force=True)
+        self.set_lineno(node)
         self.visit(node)
         self.emit('POP_JUMP_IF_FALSE', branch)
         self.newBlock()
@@ -878,6 +859,7 @@ class CodeGenerator:
         self.emit('RAISE_VARARGS', n)
 
     def visitTry(self, node):
+        self.set_lineno(node)
         if node.finalbody and not node.handlers:
             self.visitTryFinally(node)
             return
@@ -916,7 +898,7 @@ class CodeGenerator:
             expr = handler.type
             target = handler.name
             body = handler.body
-            self.set_lineno(expr)
+            self.set_lineno(handler)
             if expr:
                 self.emit('DUP_TOP')
                 self.visit(expr)
@@ -963,7 +945,7 @@ class CodeGenerator:
     def visitTryFinally(self, node, except_protect=False):
         body = self.newBlock()
         final = self.newBlock()
-        self.set_lineno(node)
+#        self.set_lineno(node)
         self.emit('SETUP_FINALLY', final)
         self.nextBlock(body)
         self.setups.push((TRY_FINALLY, body))
@@ -982,6 +964,7 @@ class CodeGenerator:
     __with_count = 0
 
     def visitWith(self, node):
+        self.set_lineno(node)
         body = self.newBlock()
         stack = []
         for withitem in node.items:
@@ -989,7 +972,6 @@ class CodeGenerator:
             stack.append(final)
             self.__with_count += 1
             valuevar = "_[%d]" % self.__with_count
-            self.set_lineno(node)
             self.visit(withitem.context_expr)
 
             py2 = 0
@@ -1052,23 +1034,23 @@ class CodeGenerator:
             self.emit('POP_TOP')
 
     def visitNum(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         self.emit('LOAD_CONST', node.n)
 
     def visitStr(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         self.emit('LOAD_CONST', node.s)
 
     def visitBytes(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         self.emit('LOAD_CONST', node.s)
 
     def visitNameConstant(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         self.emit('LOAD_CONST', node.value)
 
     def visitConst(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         self.emit('LOAD_CONST', node.value)
 
     def visitKeyword(self, node):
@@ -1080,7 +1062,7 @@ class CodeGenerator:
         pass
 
     def visitName(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         if isinstance(node.ctx, ast.Store):
             self.storeName(node.id)
         elif isinstance(node.ctx, ast.Del):
@@ -1142,6 +1124,7 @@ class CodeGenerator:
             self.emit('LOAD_ATTR', elt)
 
     def visitAttribute(self, node):
+        self.update_lineno(node)
         self.visit(node.value)
         if isinstance(node.ctx, ast.Store):
             self.emit('STORE_ATTR', self.mangle(node.attr))
@@ -1263,7 +1246,7 @@ class CodeGenerator:
     def visitCall(self, node):
         pos = 0
         kw = 0
-        self.set_lineno(node)
+        self.update_lineno(node)
         self.visit(node.func)
         star_args = None
         dstar_args = None
@@ -1324,7 +1307,7 @@ class CodeGenerator:
         self.emit('RETURN_VALUE')
 
     def visitYield(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         if node.value:
             self.visit(node.value)
         else:
@@ -1332,7 +1315,7 @@ class CodeGenerator:
         self.emit('YIELD_VALUE')
 
     def visitYieldFrom(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         self.visit(node.value)
         self.emit('GET_YIELD_FROM_ITER')
         self.emit('LOAD_CONST', None)
@@ -1341,6 +1324,7 @@ class CodeGenerator:
     # slice and subscript stuff
 
     def visitSubscript(self, node, aug_flag=None):
+        self.update_lineno(node)
         self.visit(node.value)
         self.visit(node.slice)
 
@@ -1381,6 +1365,7 @@ class CodeGenerator:
     }
 
     def visitBinOp(self, node):
+        self.update_lineno(node)
         self.visit(node.left)
         self.visit(node.right)
         op = self._binary_opcode[type(node.op)]
@@ -1400,6 +1385,7 @@ class CodeGenerator:
     }
 
     def visitUnaryOp(self, node):
+        self.update_lineno(node)
         self.unaryOp(node, self._unary_opcode[type(node.op)])
 
     def visitBackquote(self, node):
@@ -1408,6 +1394,7 @@ class CodeGenerator:
     # object constructors
 
     def visitEllipsis(self, node):
+        self.update_lineno(node)
         self.emit('LOAD_CONST', Ellipsis)
 
     def _visitUnpack(self, node):
@@ -1427,7 +1414,7 @@ class CodeGenerator:
             self.emit('UNPACK_SEQUENCE', before)
 
     def visitTuple(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         if isinstance(node.ctx, ast.Store):
             self._visitUnpack(node)
         for elt in node.elts:
@@ -1436,7 +1423,7 @@ class CodeGenerator:
             self.emit('BUILD_TUPLE', len(node.elts))
 
     def visitList(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         if isinstance(node.ctx, ast.Store):
             self._visitUnpack(node)
         for elt in node.elts:
@@ -1445,7 +1432,7 @@ class CodeGenerator:
             self.emit('BUILD_LIST', len(node.elts))
 
     def visitSet(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         for elt in node.elts:
             self.visit(elt)
         self.emit('BUILD_SET', len(node.elts))
@@ -1473,7 +1460,7 @@ class CodeGenerator:
     # Create dict item by item. Saves interp stack size at the expense
     # of bytecode size/speed.
     def visitDict_by_one(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         self.emit('BUILD_MAP', 0)
         for k, v in zip(node.keys, node.values):
             self.emit('DUP_TOP')
@@ -1483,7 +1470,7 @@ class CodeGenerator:
             self.emit('STORE_SUBSCR')
 
     def visitDict(self, node):
-        self.set_lineno(node)
+        self.update_lineno(node)
         for k, v in zip(node.keys, node.values):
             self.visit(k)
             self.visit(v)
@@ -1535,7 +1522,6 @@ class InteractiveCodeGenerator(NestedScopeMixin, CodeGenerator):
     def __init__(self, tree):
         self.graph = pyassem.PyFlowGraph("<interactive>", tree.filename)
         self.__super_init()
-        self.set_lineno(tree)
         walk(tree, self)
         self.emit('RETURN_VALUE')
 
@@ -1695,7 +1681,7 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
         self.storeName("__qualname__")
         doc = self.get_docstring(klass)
         if doc is not None:
-            self.set_lineno(klass.body[0])
+            self.update_lineno(klass.body[0])
             self.emit("LOAD_CONST", doc)
             self.storeName('__doc__')
 
