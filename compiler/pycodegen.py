@@ -1464,6 +1464,11 @@ class CodeGenerator:
             num += 1
         self.emit('BUILD_SLICE', num)
 
+    def visitExtSlice(self, node):
+        for d in node.dims:
+            self.visit(d)
+        self.emit('BUILD_TUPLE', len(node.dims))
+
     # Create dict item by item. Saves interp stack size at the expense
     # of bytecode size/speed.
     def visitDict_by_one(self, node):
