@@ -365,14 +365,15 @@ class CodeGenerator:
         return False
 
     def get_docstring(self, node):
-        if isinstance(node.body[0], ast.Expr) and isinstance(node.body[0].value, ast.Str):
+        if node.body and isinstance(node.body[0], ast.Expr) \
+           and isinstance(node.body[0].value, ast.Str):
             return node.body[0].value.s
 
     def skip_docstring(self, body):
         """Given list of statements, representing body of a function, class,
         or module, skip docstring, if any.
         """
-        if isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Str):
+        if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Str):
             return body[1:]
         return body
 
