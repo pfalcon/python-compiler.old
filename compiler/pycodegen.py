@@ -847,6 +847,9 @@ class CodeGenerator:
         if node.exc:
             self.visit(node.exc)
             n = n + 1
+        if node.cause:
+            self.visit(node.cause)
+            n = n + 1
         self.emit('RAISE_VARARGS', n)
 
     def visitTry(self, node):
