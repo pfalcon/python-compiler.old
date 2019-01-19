@@ -886,7 +886,7 @@ class CodeGenerator:
             return
 
         # Split into 2 statements, try-except wrapped with try-finally
-        try_ex = ast.Try(body=node.body, handlers=node.handlers, orelse=node.orelse, finalbody=[])
+        try_ex = ast.Try(body=node.body, handlers=node.handlers, orelse=node.orelse, finalbody=[], lineno=node.lineno)
         node.body = try_ex
         node.handlers = []
         node.orelse = []
@@ -928,7 +928,7 @@ class CodeGenerator:
                 self.set_lineno(handler)
             self.emit('POP_TOP')
             if target:
-                self.visit(ast.Name(id=target, ctx=ast.Store()))
+                self.visit(ast.Name(id=target, ctx=ast.Store(), lineno=expr.lineno))
             else:
                 self.emit('POP_TOP')
             self.emit('POP_TOP')
