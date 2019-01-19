@@ -382,6 +382,12 @@ class CodeGenerator:
         lnf = walk(node.body, self.NameFinder(), verbose=0)
         self.locals.push(lnf.getLocals())
         self.visit(self.skip_docstring(node.body))
+
+        # See if the was a live statement, to later set its line number as
+        # module first line. If not, fall back to first line of 1.
+        if not self.graph.first_inst_lineno:
+            self.graph.first_inst_lineno = 1
+
         self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 

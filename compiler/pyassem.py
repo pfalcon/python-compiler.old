@@ -48,6 +48,9 @@ class FlowGraph:
         # line numbers in the code block. (If it's not set, it will be
         # deduced).
         self.firstline = 0
+        # Line number of first instruction output. Used to deduce .firstline
+        # if it's not set explicitly.
+        self.first_inst_lineno = 0
 
         # Was replaced with ordered_blocks
         #self.blocks = misc.Set()
@@ -117,6 +120,8 @@ class FlowGraph:
         if len(inst) == 2 and isinstance(inst[1], Block):
             self.current.addOutEdge(inst[1])
         self.current.emit(inst)
+        if inst[0] == "SET_LINENO" and not self.first_inst_lineno:
+            self.first_inst_lineno = inst[1]
 
     def getBlocksInOrder(self):
         """Return the blocks in reverse postorder
@@ -545,7 +550,7 @@ class PyFlowGraph(FlowGraph):
     def makeByteCode(self):
         assert self.stage == CONV
         self.lnotab = lnotab = LineAddrTable()
-        lnotab.setFirstLine(self.firstline or 1)
+        lnotab.setFirstLine(self.firstline or self.first_inst_lineno or 1)
         for t in self.insts:
             opname = t[0]
             if len(t) == 1:
@@ -577,6 +582,11 @@ class PyFlowGraph(FlowGraph):
             nlocals = len(self.varnames)
 
         firstline = self.firstline
+        # For module, .firstline is initially not set, and should be first
+        # line with actual bytecode instruction (skipping docstring, optimized
+        # out instructions, etc.)
+        if not firstline:
+            firstline = self.first_inst_lineno
         # If no real instruction, fallback to 1
         if not firstline:
             firstline = 1
