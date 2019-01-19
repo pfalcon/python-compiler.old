@@ -1042,8 +1042,10 @@ class CodeGenerator:
 
     def visitExpr(self, node):
         self.set_lineno(node)
-        self.visit(node.value)
-        self.emit('POP_TOP')
+        # CPy3.5 discards literal numbers and strings, but not anything else
+        if not isinstance(node.value, (ast.Num, ast.Str)):
+            self.visit(node.value)
+            self.emit('POP_TOP')
 
     def visitNum(self, node):
         self.set_lineno(node)
