@@ -664,7 +664,9 @@ class CodeGenerator:
         # Construct qualname prefix
         parent = gen.scope.parent
         while not isinstance(parent, symbols.ModuleScope):
-            if isinstance(parent, symbols.FunctionScope):
+            # Only real functions use "<locals>", nested scopes like
+            # comprehensions don't.
+            if type(parent) in (symbols.FunctionScope, symbols.LambdaScope):
                 prefix = parent.name + ".<locals>." + prefix
             else:
                 prefix = parent.name + "." + prefix

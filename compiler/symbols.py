@@ -202,7 +202,7 @@ class ModuleScope(Scope):
 class FunctionScope(Scope):
     pass
 
-class GenExprScope(Scope):
+class GenExprScope(FunctionScope):
     __super_init = Scope.__init__
 
     __counter = 1
