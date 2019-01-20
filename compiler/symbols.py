@@ -33,6 +33,10 @@ class Scope:
         # nested is true if the class could contain free variables,
         # i.e. if it is nested within another function.
         self.nested = None
+        # It's possible to define a scope (class, function) at the nested level,
+        # but explicitly mark it as global. Bytecode-wise, this is handled
+        # automagically, but we need to generate proper __qualname__ for these.
+        self.global_scope = False
         self.generator = None
         self.klass = None
         if klass is not None:
@@ -136,6 +140,9 @@ class Scope:
 
     def handle_children(self):
         for child in self.children:
+            if child.name in self.explicit_globals:
+                child.global_scope = True
+
             frees = child.get_free_vars()
             globals = self.add_frees(frees)
             for name in globals:
