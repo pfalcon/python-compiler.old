@@ -1095,8 +1095,12 @@ class CodeGenerator:
         self.visit(node.expr)
 
     def visitGlobal(self, node):
+        self.set_lineno(node)
         # no code to generate
-        pass
+
+    def visitNonlocal(self, node):
+        self.set_lineno(node)
+        # no code to generate
 
     def visitName(self, node):
         self.update_lineno(node)
