@@ -48,6 +48,9 @@ def mangle(name, klass):
         return name
     if len(name) + 2 >= MANGLE_LEN:
         return name
+    # TODO: Probably need to split and mangle recursively?
+    if "." in name:
+        return name
     if name.endswith('__'):
         return name
     try:
