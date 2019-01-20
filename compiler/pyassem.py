@@ -117,8 +117,15 @@ class FlowGraph:
             self.emit('SET_LINENO', self.lineno)
         if self._debug:
             print("\t", inst)
-        if len(inst) == 2 and isinstance(inst[1], Block):
-            self.current.addOutEdge(inst[1])
+
+        if len(inst) == 2:
+            if isinstance(inst[1], Block):
+                self.current.addOutEdge(inst[1])
+            elif isinstance(inst[1], int):
+                if inst[1] > 0xffff and inst[0] != "LOAD_CONST":
+                    self.current.emit(("EXTENDED_ARG", inst[1] >> 16))
+                    inst = (inst[0], inst[1] & 0xffff)
+
         self.current.emit(inst)
         if inst[0] == "SET_LINENO" and not self.first_inst_lineno:
             self.first_inst_lineno = inst[1]
