@@ -352,8 +352,12 @@ class SymbolVisitor:
                 self.visit(arg.annotation, scope)
         if args.vararg:
             scope.add_param(args.vararg.arg)
+            if args.vararg.annotation:
+                self.visit(args.vararg.annotation, scope)
         if args.kwarg:
             scope.add_param(args.kwarg.arg)
+            if args.kwarg.annotation:
+                self.visit(args.kwarg.annotation, scope)
 
     def handle_free_vars(self, scope, parent):
         parent.add_child(scope)

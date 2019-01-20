@@ -441,10 +441,18 @@ class CodeGenerator:
             if arg.annotation:
                 self.visit(arg.annotation)
                 ann_args.append(self.mangle(arg.arg))
+        if node.args.vararg:
+            if node.args.vararg.annotation:
+                self.visit(node.args.vararg.annotation)
+                ann_args.append(self.mangle(node.args.vararg.arg))
         for arg in node.args.kwonlyargs:
             if arg.annotation:
                 self.visit(arg.annotation)
                 ann_args.append(self.mangle(arg.arg))
+        if node.args.kwarg:
+            if node.args.kwarg.annotation:
+                self.visit(node.args.kwarg.annotation)
+                ann_args.append(self.mangle(node.args.kwarg.arg))
         # Cannot annotate return type for lambda
         if isinstance(node, ast.FunctionDef) and node.returns:
             self.visit(node.returns)
