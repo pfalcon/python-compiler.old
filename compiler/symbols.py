@@ -258,6 +258,8 @@ class SymbolVisitor:
             scope.nested = 1
         self.scopes[node] = scope
         self._do_args(scope, node.args)
+        if node.returns:
+            self.visit(node.returns, scope)
         self.visit(node.body, scope)
         self.handle_free_vars(scope, parent)
 

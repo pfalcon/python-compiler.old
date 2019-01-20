@@ -445,6 +445,10 @@ class CodeGenerator:
             if arg.annotation:
                 self.visit(arg.annotation)
                 ann_args.append(self.mangle(arg.arg))
+        # Cannot annotate return type for lambda
+        if isinstance(node, ast.FunctionDef) and node.returns:
+            self.visit(node.returns)
+            ann_args.append("return")
         if ann_args:
             self.emit('LOAD_CONST', tuple(ann_args))
             ann_num = len(ann_args) + 1
