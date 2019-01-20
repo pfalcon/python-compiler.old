@@ -691,6 +691,8 @@ class CodeGenerator:
 
     def get_qual_prefix(self, gen):
         prefix = ""
+        if gen.scope.global_scope:
+            return prefix
         # Construct qualname prefix
         parent = gen.scope.parent
         while not isinstance(parent, symbols.ModuleScope):
@@ -700,6 +702,8 @@ class CodeGenerator:
                 prefix = parent.name + ".<locals>." + prefix
             else:
                 prefix = parent.name + "." + prefix
+            if parent.global_scope:
+                break
             parent = parent.parent
         return prefix
 
