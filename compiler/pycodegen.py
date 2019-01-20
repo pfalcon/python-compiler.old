@@ -189,6 +189,8 @@ def get_bool_const(node):
         return bool(node.n)
     if isinstance(node, ast.NameConstant):
         return bool(node.value)
+    if isinstance(node, ast.Str):
+        return bool(node.s)
     if isinstance(node, ast.Name):
         if node.id == "__debug__":
             return True
