@@ -430,7 +430,7 @@ class CodeGenerator:
         kwdefaults_num = 0
         for kwonly, default in zip(node.args.kwonlyargs, node.args.kw_defaults):
             if default is not None:
-                self.emit('LOAD_CONST', kwonly.arg)
+                self.emit('LOAD_CONST', self.mangle(kwonly.arg))
                 self.visit(default)
                 kwdefaults_num += 1
 
@@ -1088,7 +1088,7 @@ class CodeGenerator:
             if VERSION > 1:
                 self.emit('LOAD_CONST', level)
                 self.emit('LOAD_CONST', None)
-            self.emit('IMPORT_NAME', name)
+            self.emit('IMPORT_NAME', self.mangle(name))
             mod = name.split(".")[0]
             if asname:
                 self._resolveDots(name)
@@ -1556,8 +1556,8 @@ class AbstractFunctionCode:
 
         self.name = name
 
-        args = [elt.arg for elt in func.args.args]
-        kwonlyargs = [elt.arg for elt in func.args.kwonlyargs]
+        args = [self.mangle(elt.arg) for elt in func.args.args]
+        kwonlyargs = [self.mangle(elt.arg) for elt in func.args.kwonlyargs]
 
         starargs = []
         if func.args.vararg:
