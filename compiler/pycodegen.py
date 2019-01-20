@@ -130,8 +130,9 @@ class Module(AbstractCompileMode):
         # to indicate the type of the value.  simplest way to get the
         # same effect is to call marshal and then skip the code.
         mtime = os.path.getmtime(self.filename)
-        mtime = struct.pack('<i', mtime)
-        return self.MAGIC + mtime
+        # TODO: Use size of original file
+        hdr = struct.pack('<II', int(mtime), len(self.source.encode()))
+        return self.MAGIC + hdr
 
 class LocalNameFinder:
     """Find local names in scope"""
