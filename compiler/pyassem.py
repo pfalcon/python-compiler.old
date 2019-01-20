@@ -450,6 +450,7 @@ class PyFlowGraph(FlowGraph):
             if opname in self.hasjrel:
                 oparg = inst[1]
                 offset = begin[oparg] - pc
+                assert offset >= 0, "Offset value: %d" % offset
                 insts[i] = opname, offset
             elif opname in self.hasjabs:
                 insts[i] = opname, begin[inst[1]]
