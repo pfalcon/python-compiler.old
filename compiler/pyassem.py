@@ -616,24 +616,6 @@ def isJump(opname):
     if opname[:4] == 'JUMP':
         return 1
 
-class TupleArg:
-    """Helper for marking func defs with nested tuples in arglist"""
-    def __init__(self, count, names):
-        self.count = count
-        self.names = names
-    def __repr__(self):
-        return "TupleArg(%s, %s)" % (self.count, self.names)
-    def getName(self):
-        return ".%d" % self.count
-
-def getArgCount(args):
-    argcount = len(args)
-    if args:
-        for arg in args:
-            if isinstance(arg, TupleArg):
-                numNames = len(misc.flatten(arg.names))
-                argcount = argcount - numNames
-    return argcount
 
 def twobyte(val):
     """Convert an int argument into high and low bytes"""
