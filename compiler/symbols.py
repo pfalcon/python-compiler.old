@@ -341,9 +341,13 @@ class SymbolVisitor:
         for arg in args.args:
             name = arg.arg
             scope.add_param(name)
+            if arg.annotation:
+                self.visit(arg.annotation, scope)
         for arg in args.kwonlyargs:
             name = arg.arg
             scope.add_param(name)
+            if arg.annotation:
+                self.visit(arg.annotation, scope)
         if args.vararg:
             scope.add_param(args.vararg.arg)
         if args.kwarg:
