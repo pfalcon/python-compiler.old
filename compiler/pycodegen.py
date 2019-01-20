@@ -435,7 +435,21 @@ class CodeGenerator:
                 self.visit(default)
                 kwdefaults_num += 1
 
-        self._makeClosure(gen, kwdefaults_num << 8 | len(node.args.defaults))
+        ann_args = []
+        ann_num = 0
+        for arg in node.args.args:
+            if arg.annotation:
+                self.visit(arg.annotation)
+                ann_args.append(self.mangle(arg.arg))
+        for arg in node.args.kwonlyargs:
+            if arg.annotation:
+                self.visit(arg.annotation)
+                ann_args.append(self.mangle(arg.arg))
+        if ann_args:
+            self.emit('LOAD_CONST', tuple(ann_args))
+            ann_num = len(ann_args) + 1
+
+        self._makeClosure(gen, ann_num << 16 | kwdefaults_num << 8 | len(node.args.defaults))
 
         for i in range(ndecorators):
             self.emit('CALL_FUNCTION', 1)
