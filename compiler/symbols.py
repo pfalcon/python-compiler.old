@@ -172,7 +172,9 @@ class Scope:
         for name in names:
             sc = self.check_name(name)
             if self.nested:
-                if sc == SC_UNKNOWN or sc == SC_FREE \
+                if name == "__class__" and isinstance(self, ClassScope):
+                    self.cells[name] = 1
+                elif sc == SC_UNKNOWN or sc == SC_FREE \
                    or isinstance(self, ClassScope):
                     self.frees[name] = 1
                 elif sc == SC_GLOBAL_IMPLICIT:
