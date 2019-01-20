@@ -537,6 +537,8 @@ class CodeGenerator:
 
         test_const = get_bool_const(node.test)
         if test_const == False:
+            if node.orelse:
+                self.visit(node.orelse)
             return
 
         loop = self.newBlock("while_loop")
