@@ -52,6 +52,50 @@ transformation of parse tree to AST are now done on C level). compiler.visitor
 was replaced with Python-level "ast" module. Compilation of AST into bytecode
 is handled using builtin compile() function with suitable parameters.
 
+Usage
+-----
+
+Currently, the package is intended to work with CPython3.5 only.
+
+```
+python3.5 -m compiler --help
+python3.5 -m compiler <input.py>
+```
+
+By default, the command above compiles source to in-memory code objects
+and executes it. If `-c` switch is passed, instead of execution, it will
+be saved to `.pyc` file. If `--dis` is passed, code will be disassembed
+before executing/saving.
+
+Running Tests
+-------------
+
+The projects includes a builtin test corpus of various syntactic constructs
+to verify codegeneration against reference output produced by CPython3.5.
+Currently, the project does not include peephole optimizer as included as
+a postprocessing pass in CPython. This means that testing should happen
+against modified CPython3.5 build with the peephole optimizer disabled.
+
+The patch is available at https://github.com/pfalcon/cpython/tree/3.5-noopt
+This repository includes `build-cpython-compiler.sh` helper script to
+download and build it. It will produce a `python3.5-nopeephole` symlink
+in the top-level directory, where scripts below expect to find it.
+
+To produce reference code generation output from python3.5-nopeephole, run:
+
+~~~
+./test_testcorpus_prepare.py
+~~~
+
+This needs to be done once. Afterwards, you can run
+
+~~~
+./test_testcorpus_run.py
+~~~
+
+to compare the output produced by this compiler package against the
+reference.
+
 Authorship and Licensing Info
 -----------------------------
 
