@@ -18,9 +18,10 @@ MANGLE_LEN = 256
 
 class Scope:
     # XXX how much information do I need about each name?
-    def __init__(self, name, module, klass=None):
+    def __init__(self, name, module, klass=None, lineno=0):
         self.name = name
         self.module = module
+        self.lineno = lineno
         self.defs = {}
         self.uses = {}
         self.globals = {}
@@ -204,7 +205,8 @@ class ModuleScope(Scope):
     __super_init = Scope.__init__
 
     def __init__(self):
-        self.__super_init("global", self)
+        # Set lineno to 0 so it sorted guaranteedly before any other scope
+        self.__super_init("global", self, lineno=0)
 
 class FunctionScope(Scope):
     pass
@@ -214,10 +216,10 @@ class GenExprScope(FunctionScope):
 
     __counter = 1
 
-    def __init__(self, module, klass=None, name="<genexpr>"):
+    def __init__(self, module, klass=None, name="<genexpr>", lineno=0):
         i = self.__counter
         self.__counter += 1
-        self.__super_init(name, module, klass)
+        self.__super_init(name, module, klass, lineno=lineno)
         self.add_param('.0')
 
     def get_names(self):
@@ -229,16 +231,16 @@ class LambdaScope(FunctionScope):
 
     __counter = 1
 
-    def __init__(self, module, klass=None):
+    def __init__(self, module, klass=None, lineno=0):
         i = self.__counter
         self.__counter += 1
-        self.__super_init("<lambda>", module, klass)
+        self.__super_init("<lambda>", module, klass, lineno=lineno)
 
 class ClassScope(Scope):
     __super_init = Scope.__init__
 
-    def __init__(self, name, module):
-        self.__super_init(name, module, name)
+    def __init__(self, name, module, lineno=0):
+        self.__super_init(name, module, name, lineno=lineno)
 
 class SymbolVisitor:
     def __init__(self):
@@ -259,7 +261,7 @@ class SymbolVisitor:
         parent.add_def(node.name)
         for n in node.args.defaults:
             self.visit(n, parent)
-        scope = FunctionScope(node.name, self.module, self.klass)
+        scope = FunctionScope(node.name, self.module, self.klass, lineno=node.lineno)
         scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
@@ -278,7 +280,10 @@ class SymbolVisitor:
     }
 
     def visitGeneratorExp(self, node, parent, assign=0):
-        scope = GenExprScope(self.module, self.klass, name=self._scope_names[type(node)])
+        scope = GenExprScope(
+            self.module, self.klass, name=self._scope_names[type(node)],
+            lineno=node.lineno
+        )
         if parent.nested or isinstance(parent, FunctionScope) \
                 or isinstance(parent, GenExprScope):
             scope.nested = 1
@@ -338,7 +343,7 @@ class SymbolVisitor:
 
         for n in node.args.defaults:
             self.visit(n, parent)
-        scope = LambdaScope(self.module, self.klass)
+        scope = LambdaScope(self.module, self.klass, lineno=node.lineno)
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
         self.scopes[node] = scope
@@ -374,7 +379,7 @@ class SymbolVisitor:
         parent.add_def(node.name)
         for n in node.bases:
             self.visit(n, parent)
-        scope = ClassScope(node.name, self.module)
+        scope = ClassScope(node.name, self.module, lineno=node.lineno)
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
         doc = ast.get_docstring(node)
