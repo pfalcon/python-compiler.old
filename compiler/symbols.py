@@ -26,6 +26,7 @@ class Scope:
         self.uses = {}
         self.globals = {}
         self.explicit_globals = {}
+        self.nonlocals = {}
         self.params = {}
         self.frees = {}
         self.cells = {}
@@ -454,6 +455,7 @@ class SymbolVisitor:
         # TODO: Check that var exists in outer scope
         for name in node.names:
             scope.add_free(name)
+            scope.nonlocals[name] = 1
 
     def visitAssign(self, node, scope):
         """Propagate assignment flag down to child nodes.
