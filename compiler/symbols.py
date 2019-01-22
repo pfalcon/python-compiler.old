@@ -398,6 +398,11 @@ class SymbolVisitor:
     def visitName(self, node, scope, assign=0):
         if assign or isinstance(node.ctx, ast.Store):
             scope.add_def(node.id)
+        elif isinstance(node.ctx, ast.Del):
+            # We do something to var, so even if we "undefine" it, it's a def.
+            # Implementation-wise, delete is storing special value (usually
+            # NULL) to var.
+            scope.add_def(node.id)
         else:
             scope.add_use(node.id)
             if node.id == "super" and isinstance(scope, FunctionScope) \
