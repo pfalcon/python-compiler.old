@@ -381,6 +381,9 @@ class SymbolVisitor:
         for n in node.bases:
             self.visit(n, parent)
         scope = ClassScope(node.name, self.module, lineno=node.lineno)
+        # Set parent ASAP. TODO: Probably makes sense to do that for
+        # other scope types either.
+        scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
         doc = ast.get_docstring(node)
@@ -411,6 +414,20 @@ class SymbolVisitor:
             scope.add_def(node.id)
         else:
             scope.add_use(node.id)
+
+            if node.id == "__class__" and isinstance(scope, ClassScope):
+                # The idea is that in class body, __class__ is still bound to
+                # the outer containing class (if any). Otherwise, this class'
+                # __class__ is bound in methods of this class, but not class
+                # body itself (__class__ is created as result of class body
+                # evaluations).
+                parent = scope.parent
+                while not isinstance(parent, ClassScope):
+                    parent.frees["__class__"] = 1
+                    parent = parent.parent
+                parent.cells["__class__"] = 1
+                scope.frees["__class__"] = 1
+
             if node.id == "super" and isinstance(scope, FunctionScope) \
                and isinstance(scope.parent, ClassScope):
                 # If super() is used, and special cell var __class__ to class
