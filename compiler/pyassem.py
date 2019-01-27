@@ -533,6 +533,10 @@ class PyFlowGraph(FlowGraph):
     _convert_DELETE_GLOBAL = _convert_GLOBAL
 
     def _convert_DEREF(self, arg):
+        # Sometimes, both cellvars and freevars may contain the same var
+        # (e.g., for class' __class__). In this case, prefer freevars.
+        if arg in self.freevars:
+            return self._lookupName(arg, self.freevars) + len(self.cellvars)
         return self._lookupName(arg, self.closure)
     _convert_LOAD_DEREF = _convert_DEREF
     _convert_STORE_DEREF = _convert_DEREF
