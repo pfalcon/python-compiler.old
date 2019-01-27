@@ -193,7 +193,10 @@ class Scope:
                 elif sc != SC_CELL:
                     child_globals.append(name)
             else:
-                if sc == SC_LOCAL:
+                if name == "__class__":
+                    if isinstance(self, ClassScope):
+                        self.cells[name] = 1
+                elif sc == SC_LOCAL:
                     self.cells[name] = 1
                 elif sc != SC_CELL:
                     child_globals.append(name)
