@@ -276,6 +276,8 @@ class SymbolVisitor:
         self.visit(node.body, scope)
         self.handle_free_vars(scope, parent)
 
+    visitAsyncFunctionDef = visitFunctionDef
+
     _scope_names = {
         ast.GeneratorExp: "<genexpr>",
         ast.ListComp: "<listcomp>",

@@ -412,6 +412,8 @@ class CodeGenerator:
         #    self.setDocstring(node.doc)
         self.storeName(node.name)
 
+    visitAsyncFunctionDef = visitFunctionDef
+
     def visitLambda(self, node):
         self.update_lineno(node)
         self._visitFuncOrLambda(node, isLambda=1)
