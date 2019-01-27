@@ -33,9 +33,11 @@ class ASTVisitor:
 
     VERBOSE = 0
 
-    def __init__(self):
+    def __init__(self, visitor):
         self.node = None
         self._cache = {}
+        self.visitor = visitor
+        visitor.visit = self.dispatch
 
     def default(self, node, *args):
         """Called if no explicit visitor function exists for a node."""
@@ -115,7 +117,7 @@ class ExampleASTVisitor(ASTVisitor):
 _walker = ASTVisitor
 def walk(tree, visitor, walker=None, verbose=None):
     if walker is None:
-        walker = _walker()
+        walker = _walker(visitor)
     if verbose is not None:
         walker.VERBOSE = verbose
     walker.preorder(tree, visitor)
