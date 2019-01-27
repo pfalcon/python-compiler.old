@@ -1479,23 +1479,36 @@ class CodeGenerator:
         else:
             self.emit('UNPACK_SEQUENCE', before)
 
-    def visitTuple(self, node):
+    def hasStarred(self, elts):
+        for elt in elts:
+            if isinstance(elt, ast.Starred):
+                return True
+        return False
+
+    def _visitListOrTuple(self, node, build_op, build_ex_op):
         self.update_lineno(node)
         if isinstance(node.ctx, ast.Store):
             self._visitUnpack(node)
+            starred_load = False
+        else:
+            starred_load = self.hasStarred(node.elts)
+
         for elt in node.elts:
             self.visit(elt)
+            if starred_load and isinstance(elt, ast.Name):
+                self.emit('BUILD_TUPLE', 1)
+
         if isinstance(node.ctx, ast.Load):
-            self.emit('BUILD_TUPLE', len(node.elts))
+            if starred_load:
+                self.emit(build_ex_op, len(node.elts))
+            else:
+                self.emit(build_op, len(node.elts))
+
+    def visitTuple(self, node):
+        self._visitListOrTuple(node, 'BUILD_TUPLE', 'BUILD_TUPLE_UNPACK')
 
     def visitList(self, node):
-        self.update_lineno(node)
-        if isinstance(node.ctx, ast.Store):
-            self._visitUnpack(node)
-        for elt in node.elts:
-            self.visit(elt)
-        if isinstance(node.ctx, ast.Load):
-            self.emit('BUILD_LIST', len(node.elts))
+        self._visitListOrTuple(node, 'BUILD_LIST', 'BUILD_LIST_UNPACK')
 
     def visitSet(self, node):
         self.update_lineno(node)
