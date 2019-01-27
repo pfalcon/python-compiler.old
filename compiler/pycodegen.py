@@ -321,6 +321,11 @@ class CodeGenerator:
             else:
                 self.emit(prefix + '_GLOBAL', name)
         elif scope == SC_FREE or scope == SC_CELL:
+            if isinstance(self.scope, symbols.ClassScope):
+                if prefix == "STORE" and name not in self.scope.nonlocals:
+                    self.emit(prefix + '_NAME', name)
+                    return
+
             if isinstance(self.scope, symbols.ClassScope) and prefix == "LOAD":
                 self.emit(prefix + '_CLASSDEREF', name)
             else:
