@@ -10,3 +10,4 @@ script:
   - ./build-cpython-compiler.sh
   - ./test_testcorpus_prepare.py
   - ./test_testcorpus_run.py
+  - ./test_dogfeed.sh
