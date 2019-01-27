@@ -14,6 +14,7 @@ from compiler.consts import SC_LOCAL, SC_GLOBAL_IMPLICIT, SC_GLOBAL_EXPLICIT, \
 from compiler.consts import (CO_VARARGS, CO_VARKEYWORDS, CO_NEWLOCALS,
      CO_NESTED, CO_GENERATOR, CO_FUTURE_DIVISION,
      CO_FUTURE_ABSIMPORT, CO_FUTURE_WITH_STATEMENT, CO_FUTURE_PRINT_FUNCTION)
+from .visitor import ASTVisitor
 
 from . import config
 
@@ -415,6 +416,17 @@ class CodeGenerator:
         self.update_lineno(node)
         self._visitFuncOrLambda(node, isLambda=1)
 
+    def processBody(self, body, gen):
+        walker = ASTVisitor(gen)
+
+        if isinstance(body, list):
+            for stmt in body:
+                if isinstance(stmt, ast.Return):
+                    gen.seen_toplevel_return = True
+                gen.visit(stmt)
+        else:
+            gen.visit(body)
+
     def _visitFuncOrLambda(self, node, isLambda=0):
         if not isLambda and node.decorator_list:
             for decorator in node.decorator_list:
@@ -428,7 +440,9 @@ class CodeGenerator:
         body = node.body
         if not isLambda:
             body = self.skip_docstring(body)
-        walk(body, gen)
+
+        self.processBody(body, gen)
+
         gen.finish()
         for default in node.args.defaults:
             self.visit(default)
@@ -1599,6 +1613,7 @@ class AbstractFunctionCode:
             name = func.name
 
         self.name = name
+        self.seen_toplevel_return = False
 
         args = [self.mangle(elt.arg) for elt in func.args.args]
         kwonlyargs = [self.mangle(elt.arg) for elt in func.args.kwonlyargs]
@@ -1635,6 +1650,8 @@ class AbstractFunctionCode:
         return self.module
 
     def finish(self):
+        if self.seen_toplevel_return:
+            return
         self.graph.startExitBlock()
         if not self.isLambda:
             self.emit('LOAD_CONST', None)
