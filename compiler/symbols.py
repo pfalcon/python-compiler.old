@@ -457,6 +457,13 @@ class SymbolVisitor:
             scope.add_free(name)
             scope.nonlocals[name] = 1
 
+            if name == "__class__":
+                if isinstance(scope, FunctionScope) and isinstance(scope.parent, ClassScope):
+                    # TODO: Reconcile with handling for super() in visitName().
+                    scope.parent.cells["__class__"] = 1
+                    scope.frees["__class__"] = 1
+
+
     def visitAssign(self, node, scope):
         """Propagate assignment flag down to child nodes.
 
