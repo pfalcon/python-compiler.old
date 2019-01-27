@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/pfalcon/python-compiler.png?branch=master)](https://travis-ci.org/pfalcon/python-compiler)
+
 Python Bytecode Compiler Written in Python
 ==========================================
 
