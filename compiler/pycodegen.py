@@ -610,6 +610,72 @@ class CodeGenerator:
             self.visit(node.orelse)
         self.nextBlock(after)
 
+    def visitAsyncFor(self, node):
+        start = self.newBlock()
+        anchor = self.newBlock()
+        or_else = self.newBlock()
+        jump_after = self.newBlock()
+        after = self.newBlock()
+
+        self.set_lineno(node)
+
+        self.setups.push((LOOP, start))
+        self.emit('SETUP_LOOP', jump_after)
+        self.visit(node.iter)
+        self.emit('GET_AITER')
+        self.emit('LOAD_CONST', None)
+        self.emit('YIELD_FROM')
+
+        try_body = self.newBlock()
+        handlers = self.newBlock()
+        loop_body = self.newBlock()
+
+        self.nextBlock(start)
+        self.emit('SETUP_EXCEPT', handlers)
+        self.nextBlock(try_body)
+        self.setups.push((EXCEPT, try_body))
+        self.emit('GET_ANEXT')
+        self.emit('LOAD_CONST', None)
+        self.emit('YIELD_FROM')
+        self.visit(node.target)
+        self.emit('POP_BLOCK')
+        self.setups.pop()
+        self.emit('JUMP_FORWARD', loop_body)
+
+        self.startBlock(handlers)
+        self.emit('DUP_TOP')
+        self.emit('LOAD_GLOBAL', 'StopAsyncIteration')
+
+        self.emit('COMPARE_OP', 'exception match')
+        next = self.newBlock()
+        self.emit('POP_JUMP_IF_FALSE', next)
+        self.nextBlock()
+        self.emit('POP_TOP')
+        self.emit('POP_TOP')
+        self.emit('POP_TOP')
+        self.emit('POP_EXCEPT')
+        self.emit('POP_BLOCK')
+        self.emit('JUMP_ABSOLUTE', or_else)
+
+        self.startBlock(next)
+        self.emit('END_FINALLY')
+
+        self.startBlock(loop_body)
+        self.visit(node.body)
+        self.emit('JUMP_ABSOLUTE', start)
+
+        self.nextBlock(anchor)
+        self.emit('POP_BLOCK')
+        self.setups.pop()
+
+        self.nextBlock(jump_after)
+        self.emit('JUMP_ABSOLUTE', after)
+
+        self.startBlock(or_else)
+        if node.orelse:
+            self.visit(node.orelse)
+        self.nextBlock(after)
+
     def visitBreak(self, node):
         if not self.setups:
             raise SyntaxError("'break' outside loop (%s, %d)" % \

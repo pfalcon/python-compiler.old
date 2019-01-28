@@ -461,6 +461,8 @@ class SymbolVisitor:
         if node.orelse:
             self.visit(node.orelse, scope)
 
+    visitAsyncFor = visitFor
+
     def visitImportFrom(self, node, scope):
         for alias in node.names:
             if alias.name == "*":
