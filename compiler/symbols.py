@@ -265,6 +265,9 @@ class SymbolVisitor:
         parent.add_def(node.name)
         for n in node.args.defaults:
             self.visit(n, parent)
+        for n in node.args.kw_defaults:
+            if n:
+                self.visit(n, parent)
         scope = FunctionScope(node.name, self.module, self.klass, lineno=node.lineno)
         scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
@@ -349,6 +352,9 @@ class SymbolVisitor:
 
         for n in node.args.defaults:
             self.visit(n, parent)
+        for n in node.args.kw_defaults:
+            if n:
+                self.visit(n, parent)
         scope = LambdaScope(self.module, self.klass, lineno=node.lineno)
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
