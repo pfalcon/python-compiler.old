@@ -1314,19 +1314,26 @@ class CodeGenerator:
         kw = 0
         self.update_lineno(node)
         self.visit(node.func)
-        star_args = None
-        dstar_args = None
+        ex_starargs = 0
+        have_star = False
         for i in range(len(node.args)):
             arg = node.args[i]
             if isinstance(arg, ast.Starred):
-                # TODO: Implement arbitrary arg unpacking, as introduced in Py3.5
-                assert i == len(node.args) - 1
-                star_args = arg
-                self.visit(star_args)
+                have_star = True
+                if ex_starargs != 0 or i != len(node.args) - 1:
+                    ex_starargs += 1
+                self.visit(arg)
             else:
                 self.visit(arg)
-                pos = pos + 1
+                if ex_starargs != 0:
+                    ex_starargs += 1
+                    self.emit('BUILD_TUPLE', 1)
+                else:
+                    pos = pos + 1
+        if ex_starargs != 0:
+            self.emit('BUILD_LIST_UNPACK', ex_starargs)
 
+        dstar_args = None
         for kwarg in node.keywords:
             if kwarg.arg is None:
                 dstar_args = kwarg.value
@@ -1336,7 +1343,6 @@ class CodeGenerator:
                 self.visit(kwarg.value)
                 kw = kw + 1
 
-        have_star = star_args is not None
         have_dstar = dstar_args is not None
         opcode = callfunc_opcode_info[have_star, have_dstar]
         self.emit(opcode, kw << 8 | pos)
