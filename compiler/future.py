@@ -19,7 +19,7 @@ class FutureParser:
 
     features = ("nested_scopes", "generators", "division",
                 "absolute_import", "with_statement", "print_function",
-                "unicode_literals")
+                "unicode_literals", "generator_stop")
 
     def __init__(self):
         self.found = {} # set
