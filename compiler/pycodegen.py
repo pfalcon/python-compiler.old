@@ -1672,10 +1672,35 @@ class CodeGenerator:
 
     def visitDict(self, node):
         self.update_lineno(node)
-        for k, v in zip(node.keys, node.values):
-            self.visit(k)
-            self.visit(v)
-        self.emit('BUILD_MAP', len(node.keys))
+        has_dstar = None in node.keys
+        if not has_dstar:
+            for k, v in zip(node.keys, node.values):
+                self.visit(k)
+                self.visit(v)
+            self.emit('BUILD_MAP', len(node.keys))
+        else:
+            chunks = 0
+            in_chunk = 0
+
+            def out_chunk():
+                nonlocal chunks, in_chunk
+                if in_chunk:
+                    self.emit('BUILD_MAP', in_chunk)
+                    chunks += 1
+                    in_chunk = 0
+
+            for k, v in zip(node.keys, node.values):
+                if k is None:
+                    out_chunk()
+                    self.visit(v)
+                    chunks += 1
+                else:
+                    self.visit(k)
+                    self.visit(v)
+                    in_chunk += 1
+
+            out_chunk()
+            self.emit('BUILD_MAP_UNPACK', chunks)
 
 class NestedScopeMixin:
     """Defines initClass() for nested scoping (Python 2.2-compatible)"""
