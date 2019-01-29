@@ -11,3 +11,5 @@ script:
   - ./test_testcorpus_prepare.py
   - ./test_testcorpus_run.py
   - ./test_dogfeed.sh
+  - ./test_stdlib_3.5_prepare.py
+  - ./test_stdlib_3.5_run.py
