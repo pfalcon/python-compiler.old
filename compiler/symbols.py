@@ -270,7 +270,7 @@ class SymbolVisitor:
         self.scopes[node] = scope
         self._do_args(scope, node.args)
         if node.returns:
-            self.visit(node.returns, scope)
+            self.visit(node.returns, parent)
         self.visit(node.body, scope)
         self.handle_free_vars(scope, parent)
 
