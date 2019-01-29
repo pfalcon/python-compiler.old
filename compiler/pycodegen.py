@@ -1147,6 +1147,49 @@ class CodeGenerator:
             self.setups.pop()
             self.__with_count -= 1
 
+    def visitAsyncWith(self, node):
+        self.set_lineno(node)
+        body = self.newBlock()
+        stack = []
+        for withitem in node.items:
+            final = self.newBlock()
+            stack.append(final)
+            self.__with_count += 1
+            valuevar = "_[%d]" % self.__with_count
+            self.visit(withitem.context_expr)
+
+            self.emit('BEFORE_ASYNC_WITH')
+            self.emit('GET_AWAITABLE')
+            self.emit('LOAD_CONST', None)
+            self.emit('YIELD_FROM')
+            self.emit('SETUP_ASYNC_WITH', final)
+
+            if withitem.optional_vars is None:
+                self.emit('POP_TOP')
+            else:
+                self.visit(withitem.optional_vars)
+
+            self.setups.push((TRY_FINALLY, body))
+
+        self.nextBlock(body)
+        self.visit(node.body)
+
+        while stack:
+            final = stack.pop()
+            self.emit('POP_BLOCK')
+            self.setups.pop()
+            self.emit('LOAD_CONST', None)
+            self.nextBlock(final)
+            self.setups.push((END_FINALLY, final))
+            self.emit('WITH_CLEANUP_START')
+            self.emit('GET_AWAITABLE')
+            self.emit('LOAD_CONST', None)
+            self.emit('YIELD_FROM')
+            self.emit('WITH_CLEANUP_FINISH')
+            self.emit('END_FINALLY')
+            self.setups.pop()
+            self.__with_count -= 1
+
     # misc
 
     def visitDiscard(self, node):
