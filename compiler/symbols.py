@@ -263,11 +263,6 @@ class SymbolVisitor:
         if node.decorator_list:
             self.visit(node.decorator_list, parent)
         parent.add_def(node.name)
-        for n in node.args.defaults:
-            self.visit(n, parent)
-        for n in node.args.kw_defaults:
-            if n:
-                self.visit(n, parent)
         scope = FunctionScope(node.name, self.module, self.klass, lineno=node.lineno)
         scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
@@ -349,12 +344,6 @@ class SymbolVisitor:
         # context where assign is passed.  The transformer should catch
         # any code that has a lambda on the left-hand side.
         assert not assign
-
-        for n in node.args.defaults:
-            self.visit(n, parent)
-        for n in node.args.kw_defaults:
-            if n:
-                self.visit(n, parent)
         scope = LambdaScope(self.module, self.klass, lineno=node.lineno)
         scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
@@ -365,6 +354,12 @@ class SymbolVisitor:
         self.handle_free_vars(scope, parent)
 
     def _do_args(self, scope, args):
+        for n in args.defaults:
+            self.visit(n, scope.parent)
+        for n in args.kw_defaults:
+            if n:
+                self.visit(n, scope.parent)
+
         for arg in args.args:
             name = arg.arg
             scope.add_param(name)
