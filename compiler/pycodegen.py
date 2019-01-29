@@ -1615,14 +1615,30 @@ class CodeGenerator:
         else:
             starred_load = self.hasStarred(node.elts)
 
+        chunks = 0
+        in_chunk = 0
+
+        def out_chunk():
+            nonlocal chunks, in_chunk
+            if in_chunk:
+                self.emit('BUILD_TUPLE', in_chunk)
+                in_chunk = 0
+                chunks += 1
+
         for elt in node.elts:
+            if starred_load:
+                if isinstance(elt, ast.Starred):
+                    out_chunk()
+                    chunks += 1
+                else:
+                    in_chunk += 1
             self.visit(elt)
-            if starred_load and isinstance(elt, ast.Name):
-                self.emit('BUILD_TUPLE', 1)
+        # Output trailing chunk, if any
+        out_chunk()
 
         if isinstance(node.ctx, ast.Load):
             if starred_load:
-                self.emit(build_ex_op, len(node.elts))
+                self.emit(build_ex_op, chunks)
             else:
                 self.emit(build_op, len(node.elts))
 
