@@ -356,6 +356,7 @@ class SymbolVisitor:
             if n:
                 self.visit(n, parent)
         scope = LambdaScope(self.module, self.klass, lineno=node.lineno)
+        scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
         self.scopes[node] = scope
@@ -368,20 +369,20 @@ class SymbolVisitor:
             name = arg.arg
             scope.add_param(name)
             if arg.annotation:
-                self.visit(arg.annotation, scope)
+                self.visit(arg.annotation, scope.parent)
         for arg in args.kwonlyargs:
             name = arg.arg
             scope.add_param(name)
             if arg.annotation:
-                self.visit(arg.annotation, scope)
+                self.visit(arg.annotation, scope.parent)
         if args.vararg:
             scope.add_param(args.vararg.arg)
             if args.vararg.annotation:
-                self.visit(args.vararg.annotation, scope)
+                self.visit(args.vararg.annotation, scope.parent)
         if args.kwarg:
             scope.add_param(args.kwarg.arg)
             if args.kwarg.annotation:
-                self.visit(args.kwarg.annotation, scope)
+                self.visit(args.kwarg.annotation, scope.parent)
 
     def handle_free_vars(self, scope, parent):
         parent.add_child(scope)
