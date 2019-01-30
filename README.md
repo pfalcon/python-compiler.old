@@ -150,3 +150,24 @@ $ git log --follow Lib/compiler | grep ^Author | sed -e 's/<.*>//' | sort | uniq
       1 Author: Barry Warsaw
       1 Author: Amaury Forgeot d'Arc
 ```
+
+Related Projects
+----------------
+
+Aka "why I took Python2's compiler package and spent all this effort on it
+instead of using something else".
+
+* [PyPy](https://bitbucket.org/pypy/pypy) is the obvious direction of thought.
+  PyPy is a very advanced and big project. Somewhere in there a small hadron
+  collider may be lurking. But what if you want a simple Python compiler
+  without a hadron collider? You may be out of luck to extract it, or at
+  least I was.
+* [YaPyPy](https://github.com/Xython/YAPyPy) - looks absolutely great, but
+  its docs miss to explain how to actually run it. I mean, that small part
+  of docs (README) which is written in English. There're more docs in Chinese,
+  but unfortunately, I can't read it.
+* [tailbiter](https://github.com/darius/tailbiter) is a great project
+  showing how to develop a Python bytecode compiler from scratch, and is
+  highly recommended for that purpose. But I wanted to get a "production
+  ready" (read: behaving the same way as CPython's) compiler in reasonable
+  time with reasonable effort, not write one from scratch.
