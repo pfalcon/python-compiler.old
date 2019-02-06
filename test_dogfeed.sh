@@ -16,12 +16,8 @@ run_compare compiler/__init__.py
 run_compare compiler/consts.py
 run_compare compiler/future.py
 run_compare compiler/misc.py
-run_compare compiler/syntax.py
 run_compare compiler/visitor.py
 
 run_compare compiler/symbols.py
-run_compare compiler/ast.py
 run_compare compiler/pyassem.py
 run_compare compiler/pycodegen.py
-
-run_compare compiler/transformer.py
