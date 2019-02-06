@@ -7,7 +7,7 @@ import sys
 from io import StringIO
 
 import ast
-from compiler import parse, walk, syntax
+from compiler import walk
 from compiler import pyassem, misc, future, symbols
 from compiler.consts import SC_LOCAL, SC_GLOBAL_IMPLICIT, SC_GLOBAL_EXPLICIT, \
      SC_FREE, SC_CELL
