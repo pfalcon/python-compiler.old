@@ -8,7 +8,7 @@ if sys.version_info < (3, 0):
 
 
 setup(name='python-compiler',
-      version='1.0',
+      version='1.1',
       description="""Python bytecode compiler written in Python""",
       long_description=open('README.md').read(),
       long_description_content_type='text/markdown',
