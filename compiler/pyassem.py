@@ -52,10 +52,6 @@ class FlowGraph:
         # if it's not set explicitly.
         self.first_inst_lineno = 0
 
-        # Was replaced with ordered_blocks
-        #self.blocks = misc.Set()
-        #self.blocks.add(self.entry)
-
     def startBlock(self, block):
         if self._debug:
             if self.current:
@@ -97,7 +93,6 @@ class FlowGraph:
 
     def newBlock(self, label=""):
         b = Block(label)
-        #self.blocks.add(b)
         return b
 
     def startExitBlock(self):
@@ -141,8 +136,6 @@ class FlowGraph:
         if self.exit not in self.ordered_blocks:
             return self.ordered_blocks + [self.exit]
         return self.ordered_blocks
-
-        #return self.blocks.elements()
 
     def getRoot(self):
         """Return nodes appropriate for use with dominator"""
