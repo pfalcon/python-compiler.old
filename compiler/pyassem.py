@@ -126,10 +126,7 @@ class FlowGraph:
             self.first_inst_lineno = inst[1]
 
     def getBlocksInOrder(self):
-        """Return the blocks in reverse postorder
-
-        i.e. each node appears before all of its successors
-        """
+        """Return the blocks in the order they should be output."""
         return self.ordered_blocks
 
     def getBlocks(self):
