@@ -135,53 +135,6 @@ class Module(AbstractCompileMode):
         hdr = struct.pack('<II', int(mtime), len(self.source.encode()))
         return self.MAGIC + hdr
 
-class LocalNameFinder:
-    """Find local names in scope"""
-    def __init__(self, names=()):
-        self.names = misc.Set()
-        self.globals = misc.Set()
-        for name in names:
-            self.names.add(name)
-
-    # XXX list comprehensions and for loops
-
-    def getLocals(self):
-        for elt in self.globals.elements():
-            if self.names.has_elt(elt):
-                self.names.remove(elt)
-        return self.names
-
-    def visitDict(self, node):
-        pass
-
-    def visitGlobal(self, node):
-        for name in node.names:
-            self.globals.add(name)
-
-    def visitFunctionDef(self, node):
-        self.names.add(node.name)
-
-    def visitLambda(self, node):
-        pass
-
-    def visitImport(self, node):
-        for alias in node.names:
-            self.names.add(alias.asname or alias.name)
-
-    def visitImportFrom(self, node):
-        for alias in node.names:
-            self.names.add(alias.asname or alias.name)
-
-    def visitClassDef(self, node):
-        self.names.add(node.name)
-
-    def visitAssName(self, node):
-        self.names.add(node.name)
-
-    def visitName(self, node):
-        if isinstance(node.ctx, ast.Store):
-            self.names.add(node.id)
-
 
 def get_bool_const(node):
     """Return True if node represent constantly true value, False if
@@ -219,7 +172,7 @@ class CodeGenerator:
     __init__() defined in this class.
 
     The concrete class must also define the class attributes
-    NameFinder, FunctionGen, and ClassGen.  These attributes can be
+    FunctionGen, and ClassGen.  These attributes can be
     defined in the initClass() method, which is a hook for
     initializing these methods after all the classes have been
     defined.
@@ -234,7 +187,6 @@ class CodeGenerator:
             self.initClass()
             self.__class__.__initialized = 1
         self.checkClass()
-        self.locals = misc.Stack()
         self.setups = misc.Stack()
         self.last_lineno = None
         self._setupGraphDelegation()
@@ -260,7 +212,6 @@ class CodeGenerator:
         """Verify that class is constructed correctly"""
         try:
             assert hasattr(self, 'graph')
-            assert getattr(self, 'NameFinder')
             assert getattr(self, 'FunctionGen')
             assert getattr(self, 'ClassGen')
         except AssertionError:
@@ -293,9 +244,6 @@ class CodeGenerator:
         raise RuntimeError("should be implemented by subclasses")
 
     # Next five methods handle name access
-
-    def isLocalName(self, name):
-        return self.locals.top().has_elt(name)
 
     def storeName(self, name):
         self._nameOp('STORE', name)
@@ -373,7 +321,6 @@ class CodeGenerator:
     # code objects.  They use class attributes to determine what
     # specialized code generators to use.
 
-    NameFinder = LocalNameFinder
     FunctionGen = None
     ClassGen = None
 
@@ -386,8 +333,6 @@ class CodeGenerator:
             self.set_lineno(node.body[0])
             self.emit('LOAD_CONST', doc)
             self.storeName('__doc__')
-        lnf = walk(node.body, self.NameFinder(), verbose=0)
-        self.locals.push(lnf.getLocals())
         self.visit(self.skip_docstring(node.body))
 
         # See if the was a live statement, to later set its line number as
@@ -1721,7 +1666,6 @@ class CodeGenerator:
 class NestedScopeMixin:
     """Defines initClass() for nested scoping (Python 2.2-compatible)"""
     def initClass(self):
-        self.__class__.NameFinder = LocalNameFinder
         self.__class__.FunctionGen = FunctionCodeGenerator
         self.__class__.ClassGen = ClassCodeGenerator
 
@@ -1816,8 +1760,6 @@ class AbstractFunctionCode:
             if doc is not None:
                 self.setDocstring(doc)
 
-        lnf = walk(func.body, self.NameFinder(args), verbose=0)
-        self.locals.push(lnf.getLocals())
         if func.args.vararg:
             self.graph.setFlag(CO_VARARGS)
         if func.args.kwarg:
@@ -1889,8 +1831,6 @@ class AbstractClassCode:
         self.graph = pyassem.PyFlowGraph(klass.name, filename,
                                            optimized=0, klass=1)
         self.super_init()
-        lnf = walk(klass.body, self.NameFinder(), verbose=0)
-        self.locals.push(lnf.getLocals())
         self.graph.setFlag(CO_NEWLOCALS)
         doc = self.get_docstring(klass)
         if doc is not None:
