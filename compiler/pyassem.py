@@ -5,9 +5,12 @@ import dis
 import types
 import sys
 
+from typing import Any
 from compiler import misc
 from compiler.consts \
      import CO_OPTIMIZED, CO_NEWLOCALS, CO_VARARGS, CO_VARKEYWORDS
+
+EXTENDED_ARG = dis.opname.index('EXTENDED_ARG')
 
 VERSION = sys.version_info[0]
 if VERSION < 3:
@@ -22,6 +25,31 @@ if VERSION < 3:
 else:
     CodeType = types.CodeType
     long = int
+
+
+def instrsize(oparg):
+    if oparg <= 0xff:
+        return 1
+    elif oparg <= 0xffff:
+        return 2
+    elif oparg <= 0xffffff:
+        return 3
+    else:
+        return 4
+
+
+class Instruction:
+    __slots__ = ('opname', 'oparg', 'target')
+    def __init__(self, opname: str, oparg: Any, target: "Block" = None):
+        self.opname = opname
+        self.oparg = oparg
+        self.target = target
+
+    def __repr__(self):
+        if self.target:
+            return f"Instruction({self.opname!r}, {self.oparg!r}, {self.target!r})"
+
+        return f"Instruction({self.opname!r}, {self.oparg!r})"
 
 
 class FlowGraph:
@@ -106,24 +134,24 @@ class FlowGraph:
     def _disable_debug(self):
         self._debug = 0
 
-    def emit(self, *inst):
+    def emit(self, opcode, oparg = 0):
+
         if not self.lineno_set:
             self.lineno_set = True
             self.emit('SET_LINENO', self.lineno)
         if self._debug:
             print("\t", inst)
 
-        if len(inst) == 2:
-            if isinstance(inst[1], Block):
-                self.current.addOutEdge(inst[1])
-            elif isinstance(inst[1], int):
-                if inst[1] > 0xffff and inst[0] != "LOAD_CONST":
-                    self.current.emit(("EXTENDED_ARG", inst[1] >> 16))
-                    inst = (inst[0], inst[1] & 0xffff)
+        if opcode != "SET_LINENO" and isinstance(oparg, Block):
+            self.current.addOutEdge(oparg)
+            self.current.emit(Instruction(opcode, 0, oparg))
+            return
 
-        self.current.emit(inst)
-        if inst[0] == "SET_LINENO" and not self.first_inst_lineno:
-            self.first_inst_lineno = inst[1]
+        self.current.emit(Instruction(opcode, oparg))
+
+
+        if opcode == "SET_LINENO" and not self.first_inst_lineno:
+            self.first_inst_lineno = oparg
 
     def getBlocksInOrder(self):
         """Return the blocks in the order they should be output."""
@@ -156,6 +184,7 @@ class Block:
         self.next = []
         self.prev = []
         Block._count = Block._count + 1
+        self.offset = 0
 
     def __repr__(self):
         if self.label:
@@ -168,9 +197,8 @@ class Block:
         return "<block %s %d:\n%s>" % (self.label, self.bid,
                                        '\n'.join(insts))
 
-    def emit(self, inst):
-        op = inst[0]
-        self.insts.append(inst)
+    def emit(self, instr):
+        self.insts.append(instr)
 
     def getInstructions(self):
         return self.insts
@@ -196,7 +224,7 @@ class Block:
             return True
 
     def has_return(self):
-        return self.insts and self.insts[-1][0] == "RETURN_VALUE"
+        return self.insts and self.insts[-1].opname == "RETURN_VALUE"
 
     def get_children(self):
         return list(self.outEdges) + self.next
@@ -284,10 +312,12 @@ class PyFlowGraph(FlowGraph):
         """Get a Python code object"""
         assert self.stage == RAW
         self.computeStackDepth()
-        self.flattenGraph()
-        assert self.stage == FLAT
+        # We need to convert into numeric opargs before flattening so we
+        # know the sizes of our opargs
         self.convertArgs()
         assert self.stage == CONV
+        self.flattenGraph()
+        assert self.stage == FLAT
         self.makeByteCode()
         assert self.stage == DONE
         return self.newCodeObject()
@@ -342,36 +372,53 @@ class PyFlowGraph(FlowGraph):
 
     def flattenGraph(self):
         """Arrange the blocks in order and resolve jumps"""
-        assert self.stage == RAW
-        self.insts = insts = []
-        pc = 0
-        begin = {}
-        end = {}
-        for b in self.getBlocksInOrder():
-            begin[b] = pc
-            for inst in b.getInstructions():
-                insts.append(inst)
-                if len(inst) == 1:
-                    pc = pc + 1
-                elif inst[0] != "SET_LINENO":
-                    # arg takes 2 bytes
-                    pc = pc + 3
-            end[b] = pc
-        pc = 0
-        for i in range(len(insts)):
-            inst = insts[i]
-            if len(inst) == 1:
-                pc = pc + 1
-            elif inst[0] != "SET_LINENO":
-                pc = pc + 3
-            opname = inst[0]
-            if opname in self.hasjrel:
-                oparg = inst[1]
-                offset = begin[oparg] - pc
-                assert offset >= 0, "Offset value: %d" % offset
-                insts[i] = opname, offset
-            elif opname in self.hasjabs:
-                insts[i] = opname, begin[inst[1]]
+        assert self.stage == CONV
+        # This is an awful hack that could hurt performance, but
+        # on the bright side it should work until we come up
+        # with a better solution.
+        #
+        # The issue is that in the first loop blocksize() is called
+        # which calls instrsize() which requires i_oparg be set
+        # appropriately. There is a bootstrap problem because
+        # i_oparg is calculated in the second loop.
+        #
+        # So we loop until we stop seeing new EXTENDED_ARGs.
+        # The only EXTENDED_ARGs that could be popping up are
+        # ones in jump instructions.  So this should converge
+        # fairly quickly.
+        extended_arg_recompile = True
+        while extended_arg_recompile:
+            extended_arg_recompile = False
+            self.insts = insts = []
+            pc = 0
+            for b in self.getBlocksInOrder():
+                b.offset = pc
+
+                for inst in b.getInstructions():
+                    insts.append(inst)
+                    if inst.opname != "SET_LINENO" :
+                        pc += instrsize(inst.oparg)
+
+            pc = 0
+            for inst in insts:
+                if inst.opname != "SET_LINENO":
+                    pc += instrsize(inst.oparg)
+
+                opname = inst.opname
+                if opname in self.hasjrel or opname in self.hasjabs:
+                    oparg = inst.oparg
+                    target = inst.target
+
+                    offset = target.offset
+                    if opname in self.hasjrel:
+                        offset -= pc
+
+                    offset *= 2
+                    if instrsize(oparg) != instrsize(offset):
+                        extended_arg_recompile = True
+
+                    assert offset >= 0, "Offset value: %d" % offset
+                    inst.oparg = offset
         self.stage = FLAT
 
     hasjrel = set()
@@ -383,7 +430,7 @@ class PyFlowGraph(FlowGraph):
 
     def convertArgs(self):
         """Convert arguments from symbolic to concrete form"""
-        assert self.stage == FLAT
+        assert self.stage == RAW
         # Docstring is first entry in co_consts for normal functions
         # (Other types of code objects deal with docstrings in different
         # manner, e.g. lambdas and comprehensions don't have docstrings,
@@ -391,13 +438,13 @@ class PyFlowGraph(FlowGraph):
         if self.name == "<lambda>" or (not self.name.startswith("<") and not self.klass):
             self.consts.insert(0, self.docstring)
         self.sort_cellvars()
-        for i in range(len(self.insts)):
-            t = self.insts[i]
-            if len(t) == 2:
-                opname, oparg = t
-                conv = self._converters.get(opname, None)
+
+        for b in self.getBlocksInOrder():
+            for instr in b.insts:
+                conv = self._converters.get(instr.opname)
                 if conv:
-                    self.insts[i] = opname, conv(self, oparg)
+                    instr.oparg = conv(self, instr.oparg)
+
         self.stage = CONV
 
     def sort_cellvars(self):
@@ -478,25 +525,29 @@ class PyFlowGraph(FlowGraph):
     del name, obj, opname
 
     def makeByteCode(self):
-        assert self.stage == CONV
+        assert self.stage == FLAT
         self.lnotab = lnotab = LineAddrTable()
         lnotab.setFirstLine(self.firstline or self.first_inst_lineno or 1)
+
         for t in self.insts:
-            opname = t[0]
-            if len(t) == 1:
-                lnotab.addCode(self.opnum[opname])
-            else:
-                oparg = t[1]
-                if opname == "SET_LINENO":
-                    lnotab.nextLine(oparg)
-                    continue
-                hi, lo = twobyte(oparg)
-                try:
-                    lnotab.addCode(self.opnum[opname], lo, hi)
-                except ValueError:
-                    print(opname, oparg)
-                    print(self.opnum[opname], lo, hi)
-                    raise
+            if t.opname == "SET_LINENO":
+                lnotab.nextLine(t.oparg)
+                continue
+
+            oparg = t.oparg
+            try:
+                assert 0 <= oparg <= 0xffffffff
+                if oparg > 0xffffff:
+                    lnotab.addCode(EXTENDED_ARG, (oparg >> 24) & 0xff)
+                if oparg > 0xffff:
+                    lnotab.addCode(EXTENDED_ARG, (oparg >> 16) & 0xff)
+                if oparg > 0xff:
+                    lnotab.addCode(EXTENDED_ARG, (oparg >> 8) & 0xff)
+                lnotab.addCode(self.opnum[t.opname], oparg & 0xff)
+            except ValueError:
+                print(t.opname, oparg)
+                print(self.opnum[t.opname], oparg)
+                raise
         self.stage = DONE
 
     opnum = {}
@@ -579,10 +630,10 @@ class LineAddrTable:
         self.firstline = lineno
         self.lastline = lineno
 
-    def addCode(self, *args):
-        for arg in args:
-            self.code.append(arg)
-        self.codeOffset = self.codeOffset + len(args)
+    def addCode(self, opcode, oparg):
+        self.code.append(opcode)
+        self.code.append(oparg)
+        self.codeOffset += 2
 
     def nextLine(self, lineno):
         if self.firstline == 0:
@@ -630,7 +681,7 @@ class StackDepthTracker:
         depth = 0
         maxDepth = 0
         for i in insts:
-            opname = i[0]
+            opname = i.opname
             if debug:
                 print(i, end="")
             delta = self.effect.get(opname, None)
@@ -647,7 +698,7 @@ class StackDepthTracker:
                 if delta is None:
                     meth = getattr(self, opname, None)
                     if meth is not None:
-                        depth = depth + meth(i[1])
+                        depth = depth + meth(i.oparg)
             if depth > maxDepth:
                 maxDepth = depth
             if debug:
