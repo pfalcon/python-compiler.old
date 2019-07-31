@@ -163,6 +163,10 @@ def is_constant_true(node):
             return 1
     return 0
 
+def is_const(node):
+    # This is the Python 3.6 definition of constant
+    return isinstance(node, (ast.Num, ast.Str, ast.Ellipsis, ast.Bytes, ast.NameConstant, ast.Constant)) or (isinstance(node, ast.Name) and node.id == '__debug__')
+
 
 class CodeGenerator:
     """Defines basic code generator for Python bytecode
@@ -1144,8 +1148,8 @@ class CodeGenerator:
 
     def visitExpr(self, node):
         self.set_lineno(node)
-        # CPy3.5 discards literal numbers and strings, but not anything else
-        if not isinstance(node.value, (ast.Num, ast.Str)):
+        # CPy3.6 discards lots of constants
+        if not is_const(node.value):
             self.visit(node.value)
             self.emit('POP_TOP')
 
