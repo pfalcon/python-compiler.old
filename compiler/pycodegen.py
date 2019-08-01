@@ -5,7 +5,6 @@ import marshal
 import struct
 import sys
 from io import StringIO
-
 import ast
 from compiler import walk
 from compiler import pyassem, misc, future, symbols
@@ -167,6 +166,27 @@ def is_const(node):
     # This is the Python 3.6 definition of constant
     return isinstance(node, (ast.Num, ast.Str, ast.Ellipsis, ast.Bytes, ast.NameConstant, ast.Constant)) or (isinstance(node, ast.Name) and node.id == '__debug__')
 
+# TODO: We need to implement optimized code gen
+OPTIMIZE = False
+
+def const_value(node):
+    if isinstance(node, (ast.NameConstant, ast.Constant)):
+        return node.value
+    elif isinstance(node, ast.Num):
+        return node.n
+    elif isinstance(node, (ast.Str, ast.Bytes)):
+        return node.s
+    elif isinstance(node, ast.Ellipsis):
+        return ...
+    else:
+        assert isinstance(node, ast.Name) and node.id == '__debug__'
+        return OPTIMIZE
+
+def all_items_const(seq, begin, end):
+    for item in seq[begin:end]:
+        if not is_const(item):
+            return False
+    return True
 
 class CodeGenerator:
     """Defines basic code generator for Python bytecode
@@ -1635,37 +1655,49 @@ class CodeGenerator:
             self.emit('ROT_THREE')
             self.emit('STORE_SUBSCR')
 
+    def compile_subdict(self, node, begin, end):
+        n = end - begin
+        if n > 1 and all_items_const(node.keys, begin, end):
+            for i in range(begin, end):
+                self.visit(node.values[i])
+
+            self.emit('LOAD_CONST', tuple(const_value(x) for x in node.keys[begin:end]))
+            self.emit('BUILD_CONST_KEY_MAP', n)
+        else:
+            for i in range(begin, end):
+                self.visit(node.keys[i])
+                self.visit(node.values[i])
+
+            self.emit('BUILD_MAP', n)
+
     def visitDict(self, node):
         self.update_lineno(node)
-        has_dstar = None in node.keys
-        if not has_dstar:
-            for k, v in zip(node.keys, node.values):
-                self.visit(k)
+        containers = elements = 0
+        is_unpacking = False
+
+        for i, (k, v) in enumerate(zip(node.keys, node.values)):
+            is_unpacking = k is None
+            if elements == 0xFFFF or (elements and is_unpacking):
+                self.compile_subdict(node, i - elements, i)
+                containers += 1
+                elements = 0
+
+            if is_unpacking:
                 self.visit(v)
-            self.emit('BUILD_MAP', len(node.keys))
-        else:
-            chunks = 0
-            in_chunk = 0
+                containers += 1
+            else:
+                elements += 1
 
-            def out_chunk():
-                nonlocal chunks, in_chunk
-                if in_chunk:
-                    self.emit('BUILD_MAP', in_chunk)
-                    chunks += 1
-                    in_chunk = 0
+        if elements or containers == 0:
+            self.compile_subdict(node, len(node.keys) - elements, len(node.keys))
+            containers += 1
 
-            for k, v in zip(node.keys, node.values):
-                if k is None:
-                    out_chunk()
-                    self.visit(v)
-                    chunks += 1
-                else:
-                    self.visit(k)
-                    self.visit(v)
-                    in_chunk += 1
+        while containers > 1 or is_unpacking:
+            oparg = min(containers, 255)
+            self.emit('BUILD_MAP_UNPACK', oparg)
+            containers -= (oparg - 1)
+            is_unpacking = False
 
-            out_chunk()
-            self.emit('BUILD_MAP_UNPACK', chunks)
 
 class NestedScopeMixin:
     """Defines initClass() for nested scoping (Python 2.2-compatible)"""
