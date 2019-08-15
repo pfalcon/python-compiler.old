@@ -801,40 +801,11 @@ class CodeGenerator:
         self.emit('LOAD_CONST', prefix + gen.name)  # py3 qualname
         self.emit('MAKE_FUNCTION', flags)
 
-    def wrap_comprehension(self, node, nested_scope):
-        if isinstance(node, ast.GeneratorExp):
-            inner = CompInner(
-                node, nested_scope, None,
-                [node.elt], ["YIELD_VALUE", "POP_TOP"]
-            )
-            inner_name = "<genexpr>"
-        elif isinstance(node, ast.SetComp):
-            inner = CompInner(
-                node, nested_scope, ("BUILD_SET", 0),
-                [node.elt], [("SET_ADD", len(node.generators) + 1)]
-            )
-            inner_name = "<setcomp>"
-        elif isinstance(node, ast.ListComp):
-            inner = CompInner(
-                node, nested_scope, ("BUILD_LIST", 0),
-                [node.elt], [("LIST_APPEND", len(node.generators) + 1)]
-            )
-            inner_name = "<listcomp>"
-        elif isinstance(node, ast.DictComp):
-            inner = CompInner(
-                node, nested_scope, ("BUILD_MAP", 0),
-                [node.value, node.key], [("MAP_ADD", len(node.generators) + 1)]
-            )
-            inner_name = "<dictcomp>"
-        else:
-            assert 0
-        return inner, inner_name
-
     def visitDelete(self, node):
         self.set_lineno(node)
         self.visit(node.targets)
 
-    def visitNestedComp(self, node):
+    def compile_comprehension(self, node, name, elt, val):
         class Holder: pass
         node.args = Holder()
         arg1 = Holder()
@@ -845,100 +816,179 @@ class CodeGenerator:
         node.args.kwarg = None
         node.body = []
         self.update_lineno(node)
-        inner, inner_name = self.wrap_comprehension(node, nested_scope=True)
-
         gen = GenExprCodeGenerator(node, self.scopes, self.class_name,
-                                   self.get_module(), inner_name)
-        walk(inner, gen)
+                                   self.get_module(), name)
+        walker = ASTVisitor(gen)
+        if isinstance(node, ast.ListComp):
+            gen.emit('BUILD_LIST')
+        elif isinstance(node, ast.SetComp):
+            gen.emit('BUILD_SET')
+        elif isinstance(node, ast.DictComp):
+            gen.emit('BUILD_MAP')
+        elif not isinstance(node, ast.GeneratorExp):
+            raise SystemError(f"Unknown comprehension type: {type(node).__name__}")
+
+        gen.compile_comrehension_generator(node.generators, 0, elt, val, type(node))
+
+        if not isinstance(node, ast.GeneratorExp):
+            gen.emit('RETURN_VALUE')
+
         gen.finish()
 
         self._makeClosure(gen, 0)
+
         # precomputation of outmost iterable
         self.visit(node.generators[0].iter)
-        self.emit('GET_ITER')
+        if node.generators[0].is_async:
+            self.emit('GET_AITER')
+            self.emit('LOAD_CONST', None)
+            self.emit('YIELD_FROM')
+        else:
+            self.emit('GET_ITER')
         self.emit('CALL_FUNCTION', 1)
 
-    def visitInlineComp(self, node):
-        inner, _ = self.wrap_comprehension(node, nested_scope=False)
-        self.visit(inner)
+        if gen.scope.coroutine and type(node) is not ast.GeneratorExp:
+            self.emit('GET_AWAITABLE')
+            self.emit('LOAD_CONST', None)
+            self.emit('YIELD_FROM')
 
-    def visitGenericComp(self, node):
-        if config.COMPREHENSION_SCOPE:
-            return self.visitNestedComp(node)
+
+    def visitGeneratorExp(self, node):
+        self.compile_comprehension(node, "<genexpr>", node.elt, None)
+
+    def visitListComp(self, node):
+        self.compile_comprehension(node, "<listcomp>", node.elt, None)
+
+    def visitSetComp(self, node):
+        self.compile_comprehension(node, "<setcomp>", node.elt, None)
+
+    def visitDictComp(self, node):
+        self.compile_comprehension(node, "<dictcomp>", node.key, node.value)
+
+    def compile_comrehension_generator(self, generators, gen_index, elt, val, type):
+        if generators[gen_index].is_async:
+            self.compile_async_comprehension(generators, gen_index, elt, val, type)
         else:
-            return self.visitInlineComp(node)
+            self.compile_sync_comprehension(generators, gen_index, elt, val, type)
 
-    # Genereator expression should be always compiled with nested scope
-    # to follow generator semantics.
-    visitGeneratorExp = visitNestedComp
-    # Other comprehensions can be configured inline or nested-scope.
-    visitSetComp = visitGenericComp
-    visitListComp = visitGenericComp
-    visitDictComp = visitGenericComp
+    def compile_async_comprehension(self, generators, gen_index, elt, val, type):
+        try_ = self.newBlock("try")
+        after_try = self.newBlock("after_try")
+        except_ = self.newBlock("except")
+        if_cleanup = self.newBlock("if_cleanup")
+        try_cleanup = self.newBlock("try_cleanup")
 
-    def visitcomprehension(self, node, is_outmost):
-        start = self.newBlock("comp_start")
-        anchor = self.newBlock("comp_anchor")
-        # TODO: end is not used
-        end = self.newBlock("comp_end")
-
-        # SETUP_LOOP isn't needed because(?) break/continue are
-        # not supported in comprehensions
-        #self.setups.push((LOOP, start))
-        #self.emit('SETUP_LOOP', end)
-
-        if is_outmost:
+        gen = generators[gen_index]
+        if gen_index == 0:
             self.loadName('.0')
         else:
-            self.visit(node.iter)
+            self.visit(gen.iter)
+            self.emit('GET_AITER')
+            self.emit('LOAD_CONST', None)
+            self.emit('YIELD_FROM')
+
+        self.nextBlock(try_)
+        self.emit('SETUP_EXCEPT', except_)
+        self.setups.push((EXCEPT, try_))
+        self.emit('GET_ANEXT')
+        self.emit('LOAD_CONST', None)
+        self.emit('YIELD_FROM')
+        self.visit(gen.target)
+        self.emit('POP_BLOCK')
+        self.setups.pop()
+        self.emit('JUMP_FORWARD', after_try)
+
+        self.nextBlock(except_)
+        self.emit('DUP_TOP')
+        self.emit('LOAD_GLOBAL', 'StopAsyncIteration')
+        self.emit('COMPARE_OP', 'exception match')
+        self.emit('POP_JUMP_IF_TRUE', try_cleanup)
+        self.emit('END_FINALLY')
+
+        self.nextBlock(after_try)
+        for if_ in gen.ifs:
+            self.visit(if_)
+            self.emit('POP_JUMP_IF_FALSE', if_cleanup)
+            self.newBlock()
+
+        gen_index += 1
+        if gen_index < len(generators):
+            self.compile_comrehension_generator(generators, gen_index, elt, val, type)
+        elif type is ast.GeneratorExp:
+            self.visit(elt)
+            self.emit('YIELD_VALUE')
+            self.emit('POP_TOP')
+        elif type is ast.ListComp:
+            self.visit(elt)
+            self.emit('LIST_APPEND', gen_index + 1)
+        elif type is ast.SetComp:
+            self.visit(elt)
+            self.emit('SET_ADD', gen_index + 1)
+        elif type is ast.DictComp:
+            self.visit(val)
+            self.visit(elt)
+            self.emit('MAP_ADD', gen_index + 1)
+        else:
+            raise NotImplementedError('unknown comprehension type')
+
+        self.nextBlock(if_cleanup)
+        self.emit('JUMP_ABSOLUTE', try_)
+
+        self.nextBlock(try_cleanup)
+        self.emit('POP_TOP')
+        self.emit('POP_TOP')
+        self.emit('POP_TOP')
+        self.emit('POP_EXCEPT') # for SETUP_EXCEPT
+        self.emit('POP_TOP')
+
+    def compile_sync_comprehension(self, generators, gen_index, elt, val, type):
+        start = self.newBlock("start")
+        skip = self.newBlock("skip")
+        if_cleanup = self.newBlock("if_cleanup")
+        anchor = self.newBlock("anchor")
+
+        gen = generators[gen_index]
+        if gen_index == 0:
+            self.loadName('.0')
+        else:
+            self.visit(gen.iter)
             self.emit('GET_ITER')
 
         self.nextBlock(start)
         self.emit('FOR_ITER', anchor)
         self.nextBlock()
-        self.visit(node.target)
-        return start, anchor, end
+        self.visit(gen.target)
 
-    def visitCompInner(self, node):
-        if node.init_inst:
-            self.emit(*node.init_inst)
+        for if_ in gen.ifs:
+            self.visit(if_)
+            self.emit('POP_JUMP_IF_FALSE', if_cleanup)
+            self.newBlock()
 
-        stack = []
-        is_outmost = node.nested_scope
-        for for_ in node.generators:
-            start, anchor, end = self.visit(for_, is_outmost)
-            is_outmost = False
-            cont = None
-            for if_ in for_.ifs:
-                if cont is None:
-                    cont = self.newBlock()
-                self._visitCompIf(if_, cont)
-            stack.insert(0, (start, cont, anchor, end))
-
-        #self.visit(node.elt)
-        for elt in node.elt_nodes:
-            self.visit(elt)
-        #self.emit('YIELD_VALUE')
-        #self.emit('POP_TOP')
-        for inst in node.elt_insts:
-            if isinstance(inst, str):
-                self.emit(inst)
+        gen_index += 1
+        if gen_index < len(generators):
+            self.compile_comrehension_generator(generators, gen_index, elt, val, type)
+        else:
+            if type is ast.GeneratorExp:
+                self.visit(elt)
+                self.emit('YIELD_VALUE')
+                self.emit('POP_TOP')
+            elif type is ast.ListComp:
+                self.visit(elt)
+                self.emit('LIST_APPEND', gen_index + 1)
+            elif type is ast.SetComp:
+                self.visit(elt)
+                self.emit('SET_ADD', gen_index + 1)
+            elif type is ast.DictComp:
+                self.visit(val)
+                self.visit(elt)
+                self.emit('MAP_ADD', gen_index + 1)
             else:
-                self.emit(*inst)
+                raise NotImplementedError('unknown comprehension type')
 
-        for start, cont, anchor, end in stack:
-            if cont:
-                self.nextBlock(cont)
-            self.emit('JUMP_ABSOLUTE', start)
-            self.startBlock(anchor)
-
-        if isinstance(node.obj, ast.GeneratorExp):
-            self.emit('LOAD_CONST', None)
-
-    def _visitCompIf(self, node, branch):
-        self.visit(node)
-        self.emit('POP_JUMP_IF_FALSE', branch)
-        self.newBlock()
+            self.nextBlock(skip)
+        self.nextBlock(if_cleanup)
+        self.emit('JUMP_ABSOLUTE', start)
+        self.nextBlock(anchor)
 
     # exception related
 
@@ -1875,17 +1925,10 @@ class InteractiveCodeGenerator(NestedScopeMixin, CodeGenerator):
 
 class AbstractFunctionCode:
     optimized = 1
-    lambdaCount = 0
 
-    def __init__(self, func, scopes, isLambda, class_name, mod, lambda_name="<lambda>"):
+    def __init__(self, func, scopes, isLambda, class_name, mod, name):
         self.class_name = class_name
         self.module = mod
-        if isLambda:
-            klass = FunctionCodeGenerator
-            name = lambda_name
-            klass.lambdaCount = klass.lambdaCount + 1
-        else:
-            name = func.name
 
         self.tree = func
         self.name = name
@@ -1954,7 +1997,11 @@ class FunctionCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
     def __init__(self, func, scopes, isLambda, class_name, mod):
         self.scopes = scopes
         self.scope = scopes[func]
-        self.__super_init(func, scopes, isLambda, class_name, mod)
+        if isLambda:
+            name = "<lambda>"
+        else:
+            name = func.name
+        self.__super_init(func, scopes, isLambda, class_name, mod, name)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
         if self.scope.generator is not None:
@@ -1967,10 +2014,10 @@ class GenExprCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
 
     __super_init = AbstractFunctionCode.__init__
 
-    def __init__(self, gexp, scopes, class_name, mod, inner_name):
+    def __init__(self, gexp, scopes, class_name, mod, name):
         self.scopes = scopes
         self.scope = scopes[gexp]
-        self.__super_init(gexp, scopes, 1, class_name, mod, lambda_name=inner_name)
+        self.__super_init(gexp, scopes, False, class_name, mod, name)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
         self.graph.setFlag(CO_GENERATOR)

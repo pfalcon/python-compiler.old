@@ -32,6 +32,7 @@ class Scope:
         self.cells = {}
         self.children = []
         self.parent = None
+        self.coroutine = False
         # nested is true if the class could contain free variables,
         # i.e. if it is nested within another function.
         self.nested = None
@@ -277,6 +278,7 @@ class SymbolVisitor:
             self.visit(node.decorator_list, parent)
         parent.add_def(node.name)
         scope = FunctionScope(node.name, self.module, self.klass, lineno=node.lineno)
+        scope.coroutine = isinstance(node, ast.AsyncFunctionDef)
         scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
             scope.nested = 1
@@ -295,6 +297,10 @@ class SymbolVisitor:
         ast.DictComp: "<dictcomp>",
         ast.SetComp: "<setcomp>",
     }
+
+    def visitAwait(self, node, scope):
+        scope.coroutine = True
+        self.visit(node.value, scope)
 
     def visitGeneratorExp(self, node, parent, assign=0):
         scope = GenExprScope(
@@ -329,6 +335,9 @@ class SymbolVisitor:
     visitDictComp = visitGeneratorExp
 
     def visitcomprehension(self, node, scope, is_outmost):
+        if node.is_async:
+            scope.coroutine = True
+
         self.visit(node.target, scope, 1)
         if is_outmost:
             scope.add_use(".0")
