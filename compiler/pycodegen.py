@@ -588,70 +588,62 @@ class CodeGenerator:
         self.nextBlock(after)
 
     def visitAsyncFor(self, node):
-        start = self.newBlock()
-        anchor = self.newBlock()
-        or_else = self.newBlock()
-        jump_after = self.newBlock()
-        after = self.newBlock()
+        try_ = self.newBlock()
+        except_ = self.newBlock()
+        end = self.newBlock()
+        after_try = self.newBlock()
+        try_cleanup = self.newBlock()
+        after_loop_else = self.newBlock()
 
         self.set_lineno(node)
 
-        self.setups.push((LOOP, start))
-        self.emit('SETUP_LOOP', jump_after)
+        self.emit('SETUP_LOOP', end)
+        self.setups.push((LOOP, try_))
+
         self.visit(node.iter)
         self.emit('GET_AITER')
         self.emit('LOAD_CONST', None)
         self.emit('YIELD_FROM')
 
-        try_body = self.newBlock()
-        handlers = self.newBlock()
-        loop_body = self.newBlock()
+        self.nextBlock(try_)
 
-        self.nextBlock(start)
-        self.emit('SETUP_EXCEPT', handlers)
-        self.nextBlock(try_body)
-        self.setups.push((EXCEPT, try_body))
+        self.emit('SETUP_EXCEPT', except_)
+        self.setups.push((EXCEPT, try_))
+
         self.emit('GET_ANEXT')
         self.emit('LOAD_CONST', None)
         self.emit('YIELD_FROM')
         self.visit(node.target)
         self.emit('POP_BLOCK')
         self.setups.pop()
-        self.emit('JUMP_FORWARD', loop_body)
+        self.emit('JUMP_FORWARD', after_try)
 
-        self.startBlock(handlers)
+        self.startBlock(except_)
         self.emit('DUP_TOP')
         self.emit('LOAD_GLOBAL', 'StopAsyncIteration')
 
         self.emit('COMPARE_OP', 'exception match')
-        next = self.newBlock()
-        self.emit('POP_JUMP_IF_FALSE', next)
-        self.nextBlock()
+        self.emit('POP_JUMP_IF_TRUE', try_cleanup)
+        self.emit('END_FINALLY')
+
+        self.nextBlock(after_try)
+        self.visit(node.body)
+        self.emit('JUMP_ABSOLUTE', try_)
+
+        self.nextBlock(try_cleanup)
         self.emit('POP_TOP')
         self.emit('POP_TOP')
         self.emit('POP_TOP')
         self.emit('POP_EXCEPT')
-        self.emit('POP_BLOCK')
-        self.emit('JUMP_ABSOLUTE', or_else)
-
-        self.startBlock(next)
-        self.emit('END_FINALLY')
-
-        self.startBlock(loop_body)
-        self.visit(node.body)
-        self.emit('JUMP_ABSOLUTE', start)
-
-        self.nextBlock(anchor)
+        self.emit('POP_TOP')
         self.emit('POP_BLOCK')
         self.setups.pop()
 
-        self.nextBlock(jump_after)
-        self.emit('JUMP_ABSOLUTE', after)
+        self.startBlock(after_loop_else)
 
-        self.startBlock(or_else)
         if node.orelse:
             self.visit(node.orelse)
-        self.nextBlock(after)
+        self.nextBlock(end)
 
     def visitBreak(self, node):
         if not self.setups:

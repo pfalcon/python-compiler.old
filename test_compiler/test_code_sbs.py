@@ -8,6 +8,7 @@ from io import SEEK_END
 from .common import CompilerTest, glob_test
 from compiler import pyassem
 from compiler.pyassem import Instruction
+from compiler import pyassem
 from compiler.pycodegen import CodeGenerator
 
 

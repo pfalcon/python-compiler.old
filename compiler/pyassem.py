@@ -54,6 +54,7 @@ class Instruction:
 
 class FlowGraph:
     def __init__(self):
+        self.block_count = 0
         # List of blocks in the order they should be output for linear
         # code. As we deal with structured code, this order corresponds
         # to the order of source level constructs. (The original
@@ -88,6 +89,8 @@ class FlowGraph:
                 print("    prev", self.current.prev)
                 print("   ", self.current.get_children())
             print(repr(block))
+        block.bid = self.block_count
+        self.block_count += 1
         self.current = block
         if block and block not in self.ordered_blocks:
             if block is self.exit:
@@ -174,16 +177,13 @@ class FlowGraph:
 
 
 class Block:
-    _count = 0
-
     def __init__(self, label=''):
         self.insts = []
         self.outEdges = set()
         self.label = label
-        self.bid = Block._count
+        self.bid = None
         self.next = []
         self.prev = []
-        Block._count = Block._count + 1
         self.offset = 0
 
     def __repr__(self):
