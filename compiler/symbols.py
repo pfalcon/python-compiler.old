@@ -529,6 +529,20 @@ class SymbolVisitor:
             self.visit(n, scope, 1)
         self.visit(node.value, scope)
 
+    def visitAnnAssign(self, node, scope):
+        target = node.target
+        if isinstance(target, ast.Name):
+            if target.id in scope.nonlocals or target.id in scope.explicit_globals:
+                is_nonlocal = target.id in scope.nonlocals
+                raise SyntaxError(f"annotated name '{target.id}' can't be {'nonlocal' if is_nonlocal else 'global'}")
+            if node.simple or node.value:
+                scope.add_def(target.id)
+        else:
+            self.visit(node.target, scope, 1)
+        self.visit(node.annotation, scope)
+        if node.value:
+            self.visit(node.value, scope, 0)
+
     def visitAssName(self, node, scope, assign=1):
         scope.add_def(node.name)
 
