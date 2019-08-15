@@ -429,8 +429,6 @@ class CodeGenerator:
 
         if isinstance(body, list):
             for stmt in body:
-                if isinstance(stmt, ast.Return):
-                    gen.seen_toplevel_return = True
                 gen.visit(stmt)
         else:
             gen.visit(body)
@@ -1932,7 +1930,6 @@ class AbstractFunctionCode:
 
         self.tree = func
         self.name = name
-        self.seen_toplevel_return = False
 
         args = [self.mangle(elt.arg) for elt in func.args.args]
         kwonlyargs = [self.mangle(elt.arg) for elt in func.args.kwonlyargs]
@@ -1967,7 +1964,7 @@ class AbstractFunctionCode:
         return self.module
 
     def finish(self):
-        if self.seen_toplevel_return:
+        if self.graph.current.returns:
             return
         self.graph.startExitBlock()
         if not self.isLambda:

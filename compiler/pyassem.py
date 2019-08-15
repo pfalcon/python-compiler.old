@@ -197,6 +197,7 @@ class Block:
         self.bid = None
         self.next = []
         self.prev = []
+        self.returns = False
         self.offset = 0
 
     def __repr__(self):
@@ -211,6 +212,9 @@ class Block:
                                        '\n'.join(insts))
 
     def emit(self, instr):
+        if instr.opname == 'RETURN_VALUE':
+            self.returns = True
+
         self.insts.append(instr)
 
     def getInstructions(self):

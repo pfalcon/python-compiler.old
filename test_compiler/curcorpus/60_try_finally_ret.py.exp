@@ -1,0 +1,38 @@
+<code object <module> at #0, file "testcorpus/60_try_finally_ret.py", line 1>
+  1           0 LOAD_CONST               0 ('<code object f at #1, file "testcorpus/60_try_finally_ret.py", line 1>')
+              2 LOAD_CONST               1 ('f')
+              4 MAKE_FUNCTION            0
+              6 STORE_NAME               0 (f)
+              8 LOAD_CONST               2 (None)
+             10 RETURN_VALUE
+co_argcount: 0
+co_kwonlyargcount: 0
+co_consts: ('<code object f at #1, file "testcorpus/60_try_finally_ret.py", line 1>', 'f', None)
+co_firstlineno: 1
+co_names: ('f',)
+co_varnames: ()
+co_cellvars: ()
+co_freevars: ()
+co_lnotab: b''
+
+<code object f at #1, file "testcorpus/60_try_finally_ret.py", line 1>
+  2           0 SETUP_FINALLY            8 (to 10)
+
+  3           2 LOAD_GLOBAL              0 (a)
+              4 POP_TOP
+              6 POP_BLOCK
+              8 LOAD_CONST               0 (None)
+
+  5     >>   10 LOAD_CONST               1 (42)
+             12 RETURN_VALUE
+             14 END_FINALLY
+co_argcount: 0
+co_kwonlyargcount: 0
+co_consts: (None, 42)
+co_firstlineno: 1
+co_names: ('a',)
+co_varnames: ()
+co_cellvars: ()
+co_freevars: ()
+co_lnotab: b'\x00\x01\x02\x01\x08\x02'
+
