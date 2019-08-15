@@ -477,23 +477,7 @@ class CodeGenerator:
         self._makeClosure(gen, 0)
         self.emit('LOAD_CONST', node.name)
 
-        args = 2
-        for base in node.bases:
-            self.visit(base)
-            args += 1
-
-        kw = 0
-        for kwarg in node.keywords:
-            if kwarg.arg is None:
-                assert 0, "TODO: implement"
-                dstar_args = kwarg.value
-                self.visit(dstar_args)
-            else:
-                self.emit('LOAD_CONST', kwarg.arg)
-                self.visit(kwarg.value)
-                kw = kw + 1
-
-        self.emit('CALL_FUNCTION', kw << 8 | args)
+        self._call_helper(2, node.bases, node.keywords)
 
         for i in range(len(node.decorator_list)):
             self.emit('CALL_FUNCTION', 1)

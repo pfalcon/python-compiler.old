@@ -16,7 +16,7 @@ def format_oparg(instr):
     if instr.target is not None:
         return f"Block({instr.target.bid})"
     elif isinstance(instr.oparg, CodeGenerator):
-        return f"Code({instr.oparg.tree.lineno},{instr.oparg.tree.col_offset})"
+        return f"Code(({instr.oparg.tree.lineno},{instr.oparg.tree.col_offset}))"
     elif isinstance(instr.oparg, (str, int, tuple, frozenset, type(None))):
         return repr(instr.oparg)
 
