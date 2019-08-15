@@ -37,6 +37,10 @@ def instrsize(oparg):
     else:
         return 4
 
+def cast_signed_byte_to_unsigned(i):
+    if i < 0:
+        i = 255 + i + 1
+    return i
 
 class Instruction:
     __slots__ = ('opname', 'oparg', 'target')
@@ -138,10 +142,10 @@ class FlowGraph:
         self._debug = 0
 
     def emit(self, opcode, oparg = 0):
-
-        if not self.lineno_set:
+        if not self.lineno_set and self.lineno:
             self.lineno_set = True
             self.emit('SET_LINENO', self.lineno)
+
         if self._debug:
             print("\t", inst)
 
@@ -291,6 +295,9 @@ class PyFlowGraph(FlowGraph):
         self.closure = []
         self.varnames = list(args) + list(kwonlyargs) + list(starargs)
         self.stage = RAW
+        self.first_inst_lineno = 0
+        self.lineno_set = False
+        self.lineno = 0
 
     def setDocstring(self, doc):
         self.docstring = doc
@@ -641,31 +648,32 @@ class LineAddrTable:
             self.lastline = lineno
         else:
             # compute deltas
-            addr = self.codeOffset - self.lastoff
-            line = lineno - self.lastline
-            # Python assumes that lineno always increases with
-            # increasing bytecode address (lnotab is unsigned char).
-            # Depending on when SET_LINENO instructions are emitted
-            # this is not always true.  Consider the code:
-            #     a = (1,
-            #          b)
-            # In the bytecode stream, the assignment to "a" occurs
-            # after the loading of "b".  This works with the C Python
-            # compiler because it only generates a SET_LINENO instruction
-            # for the assignment.
-            if line >= 0:
-                push = self.lnotab.append
-                while addr > 255:
-                    push(255); push(0)
-                    addr -= 255
-                while line > 255:
-                    push(addr); push(255)
-                    line -= 255
-                    addr = 0
-                if addr > 0 or line > 0:
-                    push(addr); push(line)
-                self.lastline = lineno
-                self.lastoff = self.codeOffset
+            addr_delta = self.codeOffset - self.lastoff
+            line_delta = lineno - self.lastline
+            if not addr_delta and not line_delta:
+                return
+
+            push = self.lnotab.append
+            while addr_delta > 255:
+                push(255); push(0)
+                addr_delta -= 255
+            if line_delta < -128 or 127 < line_delta:
+                if line_delta < 0:
+                    k = -128
+                    ncodes = (-line_delta) // 128
+                else:
+                    k = 127
+                    ncodes = line_delta // 127
+                line_delta -= ncodes * 127
+                push(addr_delta); push(cast_signed_byte_to_unsigned(k))
+                addr_delta = 0
+                for j in range(ncodes - 1):
+                    push(0); push(cast_signed_byte_to_unsigned(k))
+
+            push(addr_delta); push(cast_signed_byte_to_unsigned(line_delta))
+
+            self.lastline = lineno
+            self.lastoff = self.codeOffset
 
     def getCode(self):
         return bytes(self.code)
