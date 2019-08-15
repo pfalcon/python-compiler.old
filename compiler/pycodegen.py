@@ -1387,43 +1387,78 @@ class CodeGenerator:
             self.visit(node.globals)
         self.emit('EXEC_STMT')
 
+    def compiler_subkwargs(self, kwargs, begin, end):
+        nkwargs = end - begin
+        if nkwargs > 1:
+            for i in range(begin, end):
+                self.visit(kwargs[i].value)
+            self.emit('LOAD_CONST', tuple(arg.arg for arg in kwargs[begin:end]))
+            self.emit('BUILD_CONST_KEY_MAP', nkwargs)
+        else:
+            for i in range(begin, end):
+                self.emit('LOAD_CONST', kwargs[i].arg)
+                self.visit(kwargs[i].value)
+            self.emit('BUILD_MAP', nkwargs)
+
+
+    def _call_helper(self, argcnt, args, kwargs):
+        mustdictunpack = any(arg.arg is None for arg in kwargs)
+        nelts = len(args)
+        nkwelts = len(kwargs)
+        # the number of tuples and dictionaries on the stack
+        nsubkwargs = nsubargs = 0
+        nseen = argcnt #  the number of positional arguments on the stack
+        for arg in args:
+            if isinstance(arg, ast.Starred):
+                if nseen:
+                    self.emit('BUILD_TUPLE', nseen)
+                    nseen = 0
+                    nsubargs += 1
+                self.visit(arg.value)
+                nsubargs += 1
+            else:
+                self.visit(arg)
+                nseen += 1
+
+        if nsubargs or mustdictunpack:
+            if nseen:
+                self.emit('BUILD_TUPLE', nseen)
+                nsubargs += 1
+            if nsubargs > 1:
+                self.emit('BUILD_TUPLE_UNPACK_WITH_CALL', nsubargs)
+            elif nsubargs == 0:
+                self.emit('BUILD_TUPLE', 0)
+
+            nseen = 0 # the number of keyword arguments on the stack following
+            for i, kw in enumerate(kwargs):
+                if kw.arg is None:
+                    if nseen:
+                        # A keyword argument unpacking.
+                        self.compiler_subkwargs(kwargs, i - nseen, i)
+                        nsubkwargs += 1
+                        nseen = 0
+                    self.visit(kw.value)
+                    nsubkwargs += 1
+                else:
+                    nseen += 1
+            if nseen:
+                self.compiler_subkwargs(kwargs, nkwelts - nseen, nkwelts)
+                nsubkwargs += 1
+            if nsubkwargs > 1:
+                self.emit('BUILD_MAP_UNPACK_WITH_CALL', nsubkwargs)
+            self.emit('CALL_FUNCTION_EX', int(nsubkwargs > 0))
+        elif nkwelts:
+            for kw in kwargs:
+                self.visit(kw.value)
+            self.emit('LOAD_CONST', tuple(arg.arg for arg in kwargs))
+            self.emit('CALL_FUNCTION_KW', nelts + nkwelts + argcnt)
+        else:
+            self.emit('CALL_FUNCTION', nelts + argcnt)
+
     def visitCall(self, node):
-        pos = 0
-        kw = 0
         self.update_lineno(node)
         self.visit(node.func)
-        ex_starargs = 0
-        have_star = False
-        for i in range(len(node.args)):
-            arg = node.args[i]
-            if isinstance(arg, ast.Starred):
-                have_star = True
-                if ex_starargs != 0 or i != len(node.args) - 1:
-                    ex_starargs += 1
-                self.visit(arg)
-            else:
-                self.visit(arg)
-                if ex_starargs != 0:
-                    ex_starargs += 1
-                    self.emit('BUILD_TUPLE', 1)
-                else:
-                    pos = pos + 1
-        if ex_starargs != 0:
-            self.emit('BUILD_LIST_UNPACK', ex_starargs)
-
-        dstar_args = None
-        for kwarg in node.keywords:
-            if kwarg.arg is None:
-                dstar_args = kwarg.value
-                self.visit(dstar_args)
-            else:
-                self.emit('LOAD_CONST', kwarg.arg)
-                self.visit(kwarg.value)
-                kw = kw + 1
-
-        have_dstar = dstar_args is not None
-        opcode = callfunc_opcode_info[have_star, have_dstar]
-        self.emit(opcode, kw << 8 | pos)
+        self._call_helper(0, node.args, node.keywords)
 
     def visitPrint(self, node, newline=0):
         self.set_lineno(node)
