@@ -42,6 +42,15 @@ def cast_signed_byte_to_unsigned(i):
         i = 255 + i + 1
     return i
 
+FVC_MASK      = 0x3
+FVC_NONE      = 0x0
+FVC_STR       = 0x1
+FVC_REPR      = 0x2
+FVC_ASCII     = 0x3
+FVS_MASK      = 0x4
+FVS_HAVE_SPEC = 0x4
+
+
 class Instruction:
     __slots__ = ('opname', 'oparg', 'target')
     def __init__(self, opname: str, oparg: Any, target: "Block" = None):
@@ -790,6 +799,11 @@ class StackDepthTracker:
             return -1
         elif argc == 3:
             return -2
+    def FORMAT_VALUE(self, argc):
+        return -1 if (argc & FVS_MASK) == FVS_HAVE_SPEC else 0
+    def BUILD_STRING(self, argc):
+        return 1 - argc
+
     def DUP_TOPX(self, argc):
         return argc
 

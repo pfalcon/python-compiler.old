@@ -188,6 +188,10 @@ def all_items_const(seq, begin, end):
             return False
     return True
 
+CONV_STR = ord('s')
+CONV_REPR = ord('r')
+CONV_ASCII = ord('a')
+
 class CodeGenerator:
     """Defines basic code generator for Python bytecode
 
@@ -382,6 +386,29 @@ class CodeGenerator:
         self.storeName(node.name)
 
     visitAsyncFunctionDef = visitFunctionDef
+
+    def visitJoinedStr(self, node):
+        self.update_lineno(node)
+        for value in node.values:
+            self.visit(value)
+        if len(node.values) != 1:
+            self.emit('BUILD_STRING', len(node.values))
+
+    def visitFormattedValue(self, node):
+        self.update_lineno(node)
+        self.visit(node.value)
+
+        if node.conversion == CONV_STR: oparg = pyassem.FVC_STR
+        elif node.conversion == CONV_REPR: oparg = pyassem.FVC_REPR
+        elif node.conversion == CONV_ASCII: oparg = pyassem.FVC_ASCII
+        else:
+            assert node.conversion == -1, str(node.conversion)
+            oparg = pyassem.FVC_NONE
+
+        if node.format_spec:
+            self.visit(node.format_spec)
+            oparg |= pyassem.FVS_HAVE_SPEC
+        self.emit('FORMAT_VALUE', oparg)
 
     def visitLambda(self, node):
         self.update_lineno(node)
