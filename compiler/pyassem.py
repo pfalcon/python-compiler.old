@@ -772,8 +772,8 @@ class StackDepthTracker:
         return self.CALL_FUNCTION(argc)-1
     def CALL_FUNCTION_VAR_KW(self, argc):
         return self.CALL_FUNCTION(argc)-2
-    def MAKE_FUNCTION(self, argc):
-        return -argc
+    def MAKE_FUNCTION(self, oparg):
+        return -1 - ((oparg & 0x01) != 0) - ((oparg & 0x02) != 0) - ((oparg & 0x04) != 0) - ((oparg & 0x08) != 0)
     def MAKE_CLOSURE(self, argc):
         # XXX need to account for free variables too!
         return -argc

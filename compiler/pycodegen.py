@@ -405,7 +405,7 @@ class CodeGenerator:
             ndecorators = len(node.decorator_list)
         else:
             ndecorators = 0
-
+        flags = 0
         gen = self.FunctionGen(node, self.scopes, isLambda,
                                self.class_name, self.get_module())
         body = node.body
@@ -415,15 +415,22 @@ class CodeGenerator:
         self.processBody(body, gen)
 
         gen.finish()
-        for default in node.args.defaults:
-            self.visit(default)
+        if node.args.defaults:
+            for default in node.args.defaults:
+                self.visit(default)
+                flags |= 0x01
+            self.emit('BUILD_TUPLE', len(node.args.defaults))
 
-        kwdefaults_num = 0
+        kwdefaults = []
         for kwonly, default in zip(node.args.kwonlyargs, node.args.kw_defaults):
             if default is not None:
-                self.emit('LOAD_CONST', self.mangle(kwonly.arg))
+                kwdefaults.append(self.mangle(kwonly.arg))
                 self.visit(default)
-                kwdefaults_num += 1
+
+        if kwdefaults:
+            self.emit('LOAD_CONST', tuple(kwdefaults))
+            self.emit('BUILD_CONST_KEY_MAP', len(kwdefaults))
+            flags |= 0x02
 
         ann_args = []
         ann_num = 0
@@ -448,10 +455,11 @@ class CodeGenerator:
             self.visit(node.returns)
             ann_args.append("return")
         if ann_args:
+            flags |= 0x04
             self.emit('LOAD_CONST', tuple(ann_args))
-            ann_num = len(ann_args) + 1
+            self.emit('BUILD_CONST_KEY_MAP', len(ann_args))
 
-        self._makeClosure(gen, ann_num << 16 | kwdefaults_num << 8 | len(node.args.defaults))
+        self._makeClosure(gen, flags)
 
         for i in range(ndecorators):
             self.emit('CALL_FUNCTION', 1)
@@ -763,7 +771,7 @@ class CodeGenerator:
             parent = parent.parent
         return prefix
 
-    def _makeClosure(self, gen, args):
+    def _makeClosure(self, gen, flags):
         prefix = ""
         if not isinstance(gen, ClassCodeGenerator):
             prefix = self.get_qual_prefix(gen)
@@ -773,13 +781,11 @@ class CodeGenerator:
             for name in frees:
                 self.emit('LOAD_CLOSURE', name)
             self.emit('BUILD_TUPLE', len(frees))
-            self.emit('LOAD_CONST', gen)
-            self.emit('LOAD_CONST', prefix + gen.name)  # py3 qualname
-            self.emit('MAKE_CLOSURE', args)
-        else:
-            self.emit('LOAD_CONST', gen)
-            self.emit('LOAD_CONST', prefix + gen.name)  # py3 qualname
-            self.emit('MAKE_FUNCTION', args)
+            flags |= 0x08
+
+        self.emit('LOAD_CONST', gen)
+        self.emit('LOAD_CONST', prefix + gen.name)  # py3 qualname
+        self.emit('MAKE_FUNCTION', flags)
 
     def wrap_comprehension(self, node, nested_scope):
         if isinstance(node, ast.GeneratorExp):
@@ -1805,6 +1811,7 @@ class AbstractFunctionCode:
         else:
             name = func.name
 
+        self.tree = func
         self.name = name
         self.seen_toplevel_return = False
 
@@ -1895,6 +1902,7 @@ class GenExprCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
 class AbstractClassCode:
 
     def __init__(self, klass, scopes, module):
+        self.tree = klass
         self.class_name = klass.name
         self.module = module
         self.name = klass.name

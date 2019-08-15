@@ -1,3 +1,6 @@
+import os
+from collections import deque
+from functools import partial
 from re import escape
 import dis
 from functools import partial
@@ -5,11 +8,14 @@ from io import SEEK_END
 from .common import CompilerTest, glob_test
 from compiler import pyassem
 from compiler.pyassem import Instruction
+from compiler.pycodegen import CodeGenerator
 
 
 def format_oparg(instr):
     if instr.target is not None:
         return f"Block({instr.target.bid})"
+    elif isinstance(instr.oparg, CodeGenerator):
+        return f"Code({instr.oparg.tree.lineno},{instr.oparg.tree.col_offset})"
     elif isinstance(instr.oparg, (str, int, tuple, frozenset, type(None))):
         return repr(instr.oparg)
 
@@ -19,6 +25,7 @@ def format_oparg(instr):
 DEFAULT_MARKER = "# This is the default script and should be updated to the minimal byte codes to be verified"
 SCRIPT_EXPECTED = "# EXPECTED:"
 SCRIPT_EXT = ".scr.py"
+SCRIPT_OPCODE_CODE = "<CODE_START>"
 
 
 class _AnyType:
@@ -65,19 +72,23 @@ class CodeTests(CompilerTest):
             self.fail("Script file is empty")
 
         cur_scr = 0
-        instrs = list(instrs)
-        for i, instr in enumerate(instrs):
-            if instr.opname == "SET_LINENO":
-                continue
+        queue = deque([instrs])
+        while queue:
+            instrs = tuple(queue.popleft())
+            for i, instr in enumerate(instrs):
+                if instr.opname == "SET_LINENO":
+                    continue
 
-            if cur_scr == len(script):
-                self.fail("Extra bytecodes not expected")
+                if isinstance(instr.oparg, CodeGenerator):
+                    queue.append(graph_instrs(instr.oparg.graph, instr.oparg.name))
+                if cur_scr == len(script):
+                    self.fail("Extra bytecodes not expected")
 
-            op = script[cur_scr]
-            inc, error = op.is_match(self, instrs, i, script, cur_scr)
-            if error:
-                self.fail(error)
-            cur_scr += inc
+                op = script[cur_scr]
+                inc, error = op.is_match(self, instrs, i, script, cur_scr)
+                if error:
+                    self.fail(error)
+                cur_scr += inc
 
         # make sure we exhausted the script or ended on a ...
         if cur_scr == len(script):
@@ -91,11 +102,22 @@ class CodeTests(CompilerTest):
         scr.write(SCRIPT_EXPECTED + "\n")
         scr.write(DEFAULT_MARKER + "\n")
         scr.write("[\n")
-        for instr in instrs:
-            if instr.opname == "SET_LINENO":
-                continue
-            scr.write(f"    {instr.opname}({format_oparg(instr)}),\n")
+        queue = deque([instrs])
+        while queue:
+            instrs = queue.popleft()
+            for instr in instrs:
+                if instr.opname == "SET_LINENO":
+                    continue
+                elif isinstance(instr.oparg, CodeGenerator):
+                    queue.append(
+                        graph_instrs(instr.oparg.graph, instr.oparg.name)
+                    )
+                scr.write(f"    {instr.opname}({format_oparg(instr)}),\n")
         scr.write("]\n")
+
+        self.fail(
+            "script file not present, script generated, fixup to be minimal repo and check it in"
+        )
 
     def test_self_empty_script(self):
         with self.assertRaises(AssertionError):
@@ -278,6 +300,9 @@ If oparg is not provided then the oparg will not be checked.
         return f"Op({self.opname}, {self.oparg!r})"
 
 
+CODE_START = partial(Op, SCRIPT_OPCODE_CODE)
+
+
 class Block:
     """Matches an oparg with block target"""
 
@@ -292,6 +317,25 @@ class Block:
 
     def __repr__(self):
         return f"Block({self.bid})"
+
+
+class Code:
+    def __init__(self, loc):
+        if not isinstance(loc, (str, tuple, int)):
+            raise TypeError("expected code name, line/offset tuple, or line no")
+        self.loc = loc
+
+    def __eq__(self, other):
+        if not isinstance(other, CodeGenerator):
+            return False
+
+        if isinstance(self.loc, str):
+            return self.loc == other.tree.name
+        elif isinstance(self.loc, tuple):
+            return self.loc == other.tree.lineno, other.tree.col_offset
+        elif isinstance(self.loc, int):
+            return self.loc == other.tree.lineno
+        return False
 
 
 class SkipAny:
