@@ -146,7 +146,7 @@ def get_bool_const(node):
         return bool(node.s)
     if isinstance(node, ast.Name):
         if node.id == "__debug__":
-            return True
+            return not OPTIMIZE
 
 
 def is_constant_false(node):
@@ -180,7 +180,7 @@ def const_value(node):
         return ...
     else:
         assert isinstance(node, ast.Name) and node.id == '__debug__'
-        return OPTIMIZE
+        return not OPTIMIZE
 
 def all_items_const(seq, begin, end):
     for item in seq[begin:end]:
@@ -1188,6 +1188,8 @@ class CodeGenerator:
             self.storeName(node.id)
         elif isinstance(node.ctx, ast.Del):
             self.delName(node.id)
+        elif node.id == "__debug__":
+            self.emit("LOAD_CONST", not OPTIMIZE)
         else:
             self.loadName(node.id)
 
