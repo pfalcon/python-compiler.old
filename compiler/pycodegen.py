@@ -1916,6 +1916,8 @@ class AbstractClassCode:
         #if self.scope.check_name('__class__') == SC_CELL:
         if '__class__' in self.scope.cells:
             self.emit('LOAD_CLOSURE', '__class__')
+            self.emit('DUP_TOP')
+            self.emit('STORE_NAME', '__classcell__')
         else:
             self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
