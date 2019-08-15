@@ -500,6 +500,7 @@ class PyFlowGraph(FlowGraph):
     def _convert_NAME(self, arg):
         return self._lookupName(arg, self.names)
     _convert_STORE_NAME = _convert_NAME
+    _convert_STORE_ANNOTATION = _convert_NAME
     _convert_DELETE_NAME = _convert_NAME
     _convert_IMPORT_NAME = _convert_NAME
     _convert_IMPORT_FROM = _convert_NAME

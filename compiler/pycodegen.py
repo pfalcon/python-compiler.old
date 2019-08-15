@@ -355,10 +355,20 @@ class CodeGenerator:
     def visitModule(self, node):
         self.scopes = self.parseSymbols(node)
         self.scope = self.scopes[node]
-        self.emit('SET_LINENO', 0)
+        if node.body:
+            self.set_lineno(node.body[0])
+
+        # Set current line number to the line number of first statement.
+        # This way line number for SETUP_ANNOTATIONS will always
+        # coincide with the line number of first "real" statement in module.
+        # If body is empy, then lineno will be set later in assemble.
+        if self.findAnn(node.body):
+            self.emit("SETUP_ANNOTATIONS")
+            self.did_setup_annotations = True
+        else:
+            self.did_setup_annotations = False
         doc = self.get_docstring(node)
         if doc is not None:
-            self.set_lineno(node.body[0])
             self.emit('LOAD_CONST', doc)
             self.storeName('__doc__')
         self.visit(self.skip_docstring(node.body))
@@ -1296,6 +1306,73 @@ class CodeGenerator:
             if isinstance(elt, ast.AST):
                 self.visit(elt)
 
+    def checkAnnExpr(self, node):
+        self.visit(node)
+        self.emit('POP_TOP')
+
+    def checkAnnSlice(self, node):
+        if isinstance(node, ast.Index):
+            self.checkAnnExpr(node.value)
+        else:
+            if node.lower:
+                self.checkAnnExpr(node.lower)
+            if node.upper:
+                self.checkAnnExpr(node.upper)
+            if node.step:
+                self.checkAnnExpr(node.step)
+
+    def checkAnnSubscr(self, node):
+        if isinstance(node, (ast.Index, ast.Slice)):
+            self.checkAnnSlice(node)
+        elif isinstance(node, ast.ExtSlice):
+            for v in node.dims:
+                self.checkAnnSlice(v)
+
+    def checkAnnotation(self, node):
+        if isinstance(self, (ModuleCodeGenerator, ClassCodeGenerator)):
+            self.checkAnnExpr(node.annotation)
+
+    def findAnn(self, stmts):
+        for stmt in stmts:
+            if isinstance(stmt, (ast.ClassDef, ast.FunctionDef)):
+                # Don't recurse into definitions looking for annotations
+                continue
+            elif isinstance(stmt, ast.AnnAssign):
+                return True
+            elif isinstance(stmt, ast.stmt):
+                for field in stmt._fields:
+                    child = getattr(stmt, field)
+                    if isinstance(child, list):
+                        if self.findAnn(child):
+                            return True
+
+        return False
+
+    def visitAnnAssign(self, node):
+        self.set_lineno(node)
+        if node.value:
+            self.visit(node.value)
+            self.visit(node.target)
+        if isinstance(node.target, ast.Name):
+            # If we have a simple name in a module or class, store the annotation
+            if node.simple and isinstance(self, (ModuleCodeGenerator, ClassCodeGenerator)):
+                assert self.did_setup_annotations
+                self.visit(node.annotation)
+                mangled = self.mangle(node.target.id)
+                self.emit('STORE_ANNOTATION', mangled)
+        elif isinstance(node.target, ast.Attribute):
+            if not node.value:
+                self.checkAnnExpr(node.target.value)
+        elif isinstance(node.target, ast.Subscript):
+            if not node.value:
+                self.checkAnnExpr(node.target.value)
+                self.checkAnnSubscr(node.target.slice)
+        else:
+            raise SystemError(f"invalid node type {type(node).__name__} for annotated assignment")
+
+        if not node.simple:
+            self.checkAnnotation(node)
+
     def visitAssName(self, node):
         if node.flags == 'OP_ASSIGN':
             self.storeName(node.name)
@@ -1945,6 +2022,11 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
         self.storeName("__module__")
         self.emit("LOAD_CONST", self.get_qual_prefix(self) + self.name)
         self.storeName("__qualname__")
+        if self.findAnn(klass.body):
+            self.did_setup_annotations = True
+            self.emit("SETUP_ANNOTATIONS")
+        else:
+            self.did_setup_annotations = False
         doc = self.get_docstring(klass)
         if doc is not None:
             self.update_lineno(klass.body[0])
