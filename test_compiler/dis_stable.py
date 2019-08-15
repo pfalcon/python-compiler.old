@@ -46,10 +46,12 @@ def dis(co):
 #    print("co_stacksize:", co.co_stacksize)
 #    print("co_flags:", hex(co.co_flags))
     print("co_consts:", tuple([co_repr(x) if hasattr(x, "co_code") else x for x in co.co_consts]))
+    print("co_firstlineno:", co.co_firstlineno)
     print("co_names:", co.co_names)
     print("co_varnames:", co.co_varnames)
     print("co_cellvars:", co.co_cellvars)
     print("co_freevars:", co.co_freevars)
+    print("co_lnotab:", co.co_lnotab)
     print()
     for c in co.co_consts:
         if hasattr(c, "co_code"):

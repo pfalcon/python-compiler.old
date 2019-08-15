@@ -465,6 +465,7 @@ class CodeGenerator:
             self.emit('CALL_FUNCTION', 1)
 
     def visitClassDef(self, node):
+        self.set_lineno(node)
         for decorator in node.decorator_list:
             self.visit(decorator)
 
@@ -472,7 +473,7 @@ class CodeGenerator:
                             self.get_module())
         walk(self.skip_docstring(node.body), gen)
         gen.finish()
-        self.set_lineno(node)
+
         self.emit('LOAD_BUILD_CLASS')
         self._makeClosure(gen, 0)
         self.emit('LOAD_CONST', node.name)
@@ -792,8 +793,11 @@ class CodeGenerator:
             assert 0
         return inner, inner_name
 
+    def visitDelete(self, node):
+        self.set_lineno(node)
+        self.visit(node.targets)
+
     def visitNestedComp(self, node):
-        # Make comprehension node to also look like function node
         class Holder: pass
         node.args = Holder()
         arg1 = Holder()
@@ -803,14 +807,14 @@ class CodeGenerator:
         node.args.vararg = None
         node.args.kwarg = None
         node.body = []
-
+        self.update_lineno(node)
         inner, inner_name = self.wrap_comprehension(node, nested_scope=True)
 
         gen = GenExprCodeGenerator(node, self.scopes, self.class_name,
                                    self.get_module(), inner_name)
         walk(inner, gen)
         gen.finish()
-        self.set_lineno(node)
+
         self._makeClosure(gen, 0)
         # precomputation of outmost iterable
         self.visit(node.generators[0].iter)
@@ -853,14 +857,12 @@ class CodeGenerator:
             self.emit('GET_ITER')
 
         self.nextBlock(start)
-        self.set_lineno(node)
         self.emit('FOR_ITER', anchor)
         self.nextBlock()
         self.visit(node.target)
         return start, anchor, end
 
     def visitCompInner(self, node):
-        self.set_lineno(node)
         if node.init_inst:
             self.emit(*node.init_inst)
 
@@ -897,7 +899,6 @@ class CodeGenerator:
             self.emit('LOAD_CONST', None)
 
     def _visitCompIf(self, node, branch):
-        self.set_lineno(node)
         self.visit(node)
         self.emit('POP_JUMP_IF_FALSE', branch)
         self.newBlock()
@@ -939,19 +940,11 @@ class CodeGenerator:
 
     def visitTry(self, node):
         self.set_lineno(node)
-        if node.finalbody and not node.handlers:
+        if node.finalbody:
             self.visitTryFinally(node)
             return
-        if not node.finalbody and node.handlers:
-            self.visitTryExcept(node)
-            return
 
-        # Split into 2 statements, try-except wrapped with try-finally
-        try_ex = ast.Try(body=node.body, handlers=node.handlers, orelse=node.orelse, finalbody=[], lineno=node.lineno)
-        node.body = try_ex
-        node.handlers = []
-        node.orelse = []
-        self.visitTryFinally(node)
+        self.visitTryExcept(node)
 
     def visitTryExcept(self, node):
         body = self.newBlock()
@@ -961,7 +954,7 @@ class CodeGenerator:
             lElse = self.newBlock()
         else:
             lElse = end
-        self.set_lineno(node)
+
         self.emit('SETUP_EXCEPT', handlers)
         self.nextBlock(body)
         self.setups.push((EXCEPT, body))
@@ -1024,11 +1017,13 @@ class CodeGenerator:
     def visitTryFinally(self, node, except_protect=False):
         body = self.newBlock()
         final = self.newBlock()
-#        self.set_lineno(node)
         self.emit('SETUP_FINALLY', final)
         self.nextBlock(body)
         self.setups.push((TRY_FINALLY, body))
-        self.visit(node.body)
+        if node.handlers:
+            self.visitTryExcept(node)
+        else:
+            self.visit(node.body)
         self.emit('POP_BLOCK')
         self.setups.pop()
         if except_protect:
@@ -1496,7 +1491,6 @@ class CodeGenerator:
         self.emit('YIELD_FROM')
 
     # slice and subscript stuff
-
     def visitSubscript(self, node, aug_flag=None):
         self.update_lineno(node)
         self.visit(node.value)
@@ -1918,7 +1912,6 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
         self.__super_init(klass, scopes, module)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
-        self.set_lineno(klass)
         self.emit("LOAD_NAME", "__name__")
         self.storeName("__module__")
         self.emit("LOAD_CONST", self.get_qual_prefix(self) + self.name)
