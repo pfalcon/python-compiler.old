@@ -44,6 +44,23 @@ def unot(x):
             code = self.compile(line)
             self.assertInBytecode(code, "COMPARE_OP", cmp_op)
 
+    def test_unary_op_no_fold_across_block(self):
+        code = self.compile("~(- (1 if x else 2))")
+        self.assertInBytecode(code, "UNARY_NEGATIVE")
+        self.assertInBytecode(code, "UNARY_INVERT")
+
+    def test_unary_op_unfoldable(self):
+        lines = [
+            "-'abc'",
+            "-()",
+            "-None",
+            "-...",
+            "-b''",
+        ]
+        for line in lines:
+            code = self.compile(line)
+            self.assertInBytecode(code, "UNARY_NEGATIVE")
+
     def test_while_one(self):
         # Skip over:  LOAD_CONST trueconst  POP_JUMP_IF_FALSE xx
         f = self.run_code(
@@ -304,6 +321,40 @@ def f():
         code = "x = 1 if 1 else 2"
         optcode = self.compile(code)
         self.assertNotInBytecode(optcode, "POP_JUMP_IF_FALSE")
+
+    def test_folding_of_unaryops_on_constants(self):
+        for line, elem in (
+            ("-0.5", -0.5),  # unary negative
+            ("-0.0", -0.0),  # -0.0
+            # ('-(1.0-1.0)', -0.0),               # -0.0 after folding
+            ("-0", 0),  # -0
+            ("~-2", 1),  # unary invert
+            ("+1", 1),  # unary positive
+        ):
+            code = self.compile(line)
+            self.assertInBytecode(code, "LOAD_CONST", elem)
+            for instr in dis.get_instructions(code):
+                self.assertFalse(instr.opname.startswith("UNARY_"))
+
+        # Check that -0.0 works after marshaling
+        negzero = self.run_code(
+            """
+def negzero():
+    return -(1.0 - 1.0)
+"""
+        )["negzero"]
+
+        for instr in dis.get_instructions(code):
+            self.assertFalse(instr.opname.startswith("UNARY_"))
+
+        # Verify that unfoldables are skipped
+        for line, elem, opname in (
+            ('-"abc"', "abc", "UNARY_NEGATIVE"),
+            ('~"abc"', "abc", "UNARY_INVERT"),
+        ):
+            code = self.compile(line)
+            self.assertInBytecode(code, "LOAD_CONST", elem)
+            self.assertInBytecode(code, opname)
 
     def test_return(self):
         code = "def f():\n    return 42\n    x = 1"

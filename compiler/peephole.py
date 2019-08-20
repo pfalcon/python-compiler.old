@@ -9,7 +9,10 @@ NOP = opmap["NOP"]
 COMPARE_OP = opmap["COMPARE_OP"]
 LOAD_CONST = opmap["LOAD_CONST"]
 RETURN_VALUE = opmap["RETURN_VALUE"]
+UNARY_INVERT = opmap["UNARY_INVERT"]
+UNARY_NEGATIVE = opmap["UNARY_NEGATIVE"]
 UNARY_NOT = opmap["UNARY_NOT"]
+UNARY_POSITIVE = opmap["UNARY_POSITIVE"]
 
 CONTINUE_LOOP = opmap["CONTINUE_LOOP"]
 JUMP_ABSOLUTE = opmap["JUMP_ABSOLUTE"]
@@ -30,14 +33,24 @@ ABS_JUMPS = set(opcode.hasjabs)
 REL_JUMPS = set(opcode.hasjrel)
 
 
+
 CMP_OP_IN = opcode.cmp_op.index('in')
 CMP_OP_IS_NOT = opcode.cmp_op.index('is not')
+
 
 assert CMP_OP_IN < CMP_OP_IS_NOT
 assert opcode.cmp_op.index('not in') > CMP_OP_IN and opcode.cmp_op.index('not in') < CMP_OP_IS_NOT
 assert opcode.cmp_op.index('is') > CMP_OP_IN and opcode.cmp_op.index('is') < CMP_OP_IS_NOT
 
+
 assert (CMP_OP_IS_NOT - CMP_OP_IN) == 3
+
+
+UNARY_OPS = {
+    UNARY_INVERT: lambda v: ~v,
+    UNARY_NEGATIVE: lambda v: -v,
+    UNARY_POSITIVE: lambda v: +v,
+}
 
 
 def get_op(code, i):
@@ -92,9 +105,11 @@ class Optimizer:
     def __init__(self, code: CodeType) -> None:
         assert len(code.co_code) % 2 == 0
         self.code = code
-        self.consts = code.co_consts
+        self.consts = list(code.co_consts)
         self.codestr = bytearray(code.co_code)
         self.blocks = self.markblocks()
+        self.const_stack = []
+        self.in_consts = False
 
     def is_basic_block(self, start, end):
         return self.blocks[start] == self.blocks[end]
@@ -108,6 +123,10 @@ class Optimizer:
             if self.codestr[i * 2] != EXTENDED_ARG:
                 break
         return i
+
+    def push_const(self, const):
+        self.const_stack.append(const)
+        self.in_consts = True
 
     def optimize(self) -> CodeType:
         if 0xFF in self.code.co_lnotab:
@@ -127,6 +146,10 @@ class Optimizer:
                 nexti += 1
 
             nextop = self.codestr[nexti * 2] if nexti < num_operations else 0
+
+            if not self.in_consts:
+                del self.const_stack[:]
+            self.in_consts = False
 
             handler = Optimizer.OP_HANDLERS.get(opcode)
             if handler is not None:
@@ -180,6 +203,7 @@ class Optimizer:
         # The above comment is from CPython.  This optimization is now performed
         # at the AST level and is also applied to if statements.  But it does
         # not get applied to conditionals, e.g. 1 if 2 else 3
+        self.push_const(self.consts[get_arg(self.codestr, i)])
         if (
             nextop != POP_JUMP_IF_FALSE
             or not self.is_basic_block(op_start, i + 1)
@@ -199,6 +223,55 @@ class Optimizer:
             self.fill_nops(i + 1, h)
             nexti = self.find_op(h)
 
+    @ophandler(*UNARY_OPS)
+    def op_unary_constants(self, i, opcode, op_start, nextop, nexti):
+        # Fold unary ops on constants.
+        #  LOAD_CONST c1  UNARY_OP --> LOAD_CONST unary_op(c)
+        if not self.const_stack:
+            return
+        h = self.lastn_const_start(op_start, 1)
+        if self.is_basic_block(h, op_start):
+            h = self.fold_unaryops_on_constants(h, i + 1, opcode)
+            if h >= 0:
+                self.const_stack[-1] = self.consts[get_arg(self.codestr, i)]
+                self.in_consts = True
+
+    def fold_unaryops_on_constants(self, c_start, opcode_end, opcode):
+        v = self.const_stack[-1]
+        try:
+            v = UNARY_OPS[opcode](v)
+        except TypeError:
+            return -1
+
+        # CPython does nothing to optimize these, and doing something like
+        # -+-+-+-+-+-+-+-+42  just bloats the constant table with unused entries
+        self.consts.append(v)
+
+        return self.copy_op_arg(c_start, LOAD_CONST, len(self.consts) - 1, opcode_end)
+
+    def copy_op_arg(self, i, op, oparg, maxi):
+        ilen = instrsize(oparg)
+        if ilen + i > maxi:
+            return -1
+        self.write_op_arg(maxi - ilen, op, oparg, ilen)
+        self.fill_nops(i, maxi - ilen)
+        return maxi - 1
+
+    def lastn_const_start(self, i, n):
+        assert n > 0
+        while True:
+            i -= 1
+            assert i >= 0
+            opcode = self.codestr[i * 2]
+            if opcode == LOAD_CONST:
+                n -= 1
+                if not n:
+                    while i > 0 and self.codestr[i * 2 - 2] == EXTENDED_ARG:
+                        i -= 1
+                    return i
+            else:
+                assert opcode == NOP or opcode == EXTENDED_ARG
+
     def make_new_code(self, codestr, lnotab):
         return CodeType(
             self.code.co_argcount,
@@ -207,7 +280,7 @@ class Optimizer:
             self.code.co_stacksize,
             self.code.co_flags,
             bytes(codestr),
-            self.code.co_consts,
+            tuple(self.consts),
             self.code.co_names,
             self.code.co_varnames,
             self.code.co_filename,
@@ -238,6 +311,25 @@ class Optimizer:
             blocks[block] = blockcnt
 
         return blocks
+
+    def write_op_arg(self, i, opcode, oparg, size):
+        codestr = self.codestr
+        ofs = i * 2
+        if size == 4:
+            codestr[ofs] = EXTENDED_ARG
+            codestr[ofs + 1] = (oparg >> 24) & 0xFF
+            ofs += 2
+        if size >= 3:
+            codestr[ofs] = EXTENDED_ARG
+            codestr[ofs + 1] = (oparg >> 16) & 0xFF
+            ofs += 2
+        if size >= 2:
+            codestr[ofs] = EXTENDED_ARG
+            codestr[ofs + 1] = (oparg >> 8) & 0xFF
+            ofs += 2
+
+        codestr[ofs] = opcode
+        codestr[ofs + 1] = oparg & 0xFF
 
     def fix_blocks(self):
         """updates self.blocks to contain the the new instruction offset for
