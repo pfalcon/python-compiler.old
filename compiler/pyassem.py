@@ -9,6 +9,7 @@ from typing import Any
 from compiler import misc
 from compiler.consts \
      import CO_OPTIMIZED, CO_NEWLOCALS, CO_VARARGS, CO_VARKEYWORDS
+from .peephole import Optimizer
 
 EXTENDED_ARG = dis.opname.index('EXTENDED_ARG')
 
@@ -282,7 +283,7 @@ DONE = "DONE"
 class PyFlowGraph(FlowGraph):
     super_init = FlowGraph.__init__
 
-    def __init__(self, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None):
+    def __init__(self, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None, peephole = False):
         self.super_init()
         self.name = name
         self.filename = filename
@@ -291,6 +292,7 @@ class PyFlowGraph(FlowGraph):
         self.kwonlyargs = kwonlyargs
         self.starargs = starargs
         self.klass = klass
+        self.peephole = peephole
         if optimized:
             self.flags = CO_OPTIMIZED | CO_NEWLOCALS
         else:
@@ -340,7 +342,10 @@ class PyFlowGraph(FlowGraph):
         assert self.stage == FLAT
         self.makeByteCode()
         assert self.stage == DONE
-        return self.newCodeObject()
+        code = self.newCodeObject()
+        if self.peephole:
+            code = Optimizer(code).optimize()
+        return code
 
     def dump(self, io=None):
         if io:

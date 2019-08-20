@@ -24,13 +24,21 @@ def open_with_coding(fname):
             encoding = m.group(1).decode()
     return open(fname, encoding=encoding)
 
+if len(sys.argv) < 2:
+    print('no filename provided')
+    sys.exit(1)
+
+peephole = False
+if sys.argv[1] == '--peephole':
+   peephole = True
+   del sys.argv[1]
 
 text = open_with_coding(sys.argv[1]).read()
 
 node = ast.parse(text, sys.argv[1], "exec")
 node.filename = sys.argv[1]
 
-gen = compiler.pycodegen.ModuleCodeGenerator(node)
+gen = compiler.pycodegen.ModuleCodeGenerator(node, peephole=peephole)
 codeobj = gen.getCode()
 
 import dis_stable

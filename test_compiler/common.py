@@ -16,8 +16,20 @@ def glob_test(dir, pattern, adder):
 
 
 class CompilerTest(BytecodeTestCase):
+    def compile(self, code):
+        tree = ast.parse(code)
+        tree.filename = ""
+        gen = compiler.pycodegen.ModuleCodeGenerator(tree, True)
+        return gen.getCode()
+
+    def run_code(self, code):
+        compiled = self.compile(code)
+        d = {}
+        exec(compiled, d)
+        return d
+
     def to_graph(self, code):
         tree = ast.parse(code)
         tree.filename = ""
-        gen = compiler.pycodegen.ModuleCodeGenerator(tree)
+        gen = compiler.pycodegen.ModuleCodeGenerator(tree, True)
         return gen.graph
