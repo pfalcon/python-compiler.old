@@ -8,6 +8,7 @@ NOP = opmap["NOP"]
 
 COMPARE_OP = opmap["COMPARE_OP"]
 LOAD_CONST = opmap["LOAD_CONST"]
+RETURN_VALUE = opmap["RETURN_VALUE"]
 UNARY_NOT = opmap["UNARY_NOT"]
 
 CONTINUE_LOOP = opmap["CONTINUE_LOOP"]
@@ -118,7 +119,6 @@ class Optimizer:
 
         while i < num_operations:
             opcode = self.codestr[i * 2]
-
             op_start = i
             while op_start >= 1 and self.codestr[(op_start - 1) * 2] == EXTENDED_ARG:
                 op_start -= 1
@@ -187,6 +187,17 @@ class Optimizer:
         ):
             return
         self.fill_nops(op_start, nexti + 1)
+
+    @ophandler(RETURN_VALUE)
+    def opt_return_value(self, i, opcode, op_start, nextop, nexti):
+        h = i + 1
+        block_id = self.blocks[i]
+        while h < len(self.codestr) // 2 and self.blocks[h] == block_id:
+            h += 1
+
+        if h > i + 1:
+            self.fill_nops(i + 1, h)
+            nexti = self.find_op(h)
 
     def make_new_code(self, codestr, lnotab):
         return CodeType(

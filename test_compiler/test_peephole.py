@@ -305,6 +305,24 @@ def f():
         optcode = self.compile(code)
         self.assertNotInBytecode(optcode, "POP_JUMP_IF_FALSE")
 
+    def test_return(self):
+        code = "def f():\n    return 42\n    x = 1"
+        optcode = self.run_code(code)["f"]
+        self.assertNotInBytecode(optcode, "POP_JUMP_IF_FALSE")
+
+    def test_elim_extra_return(self):
+        # RETURN LOAD_CONST None RETURN  -->  RETURN
+        f = self.run_code(
+            """
+def f(x):
+    return x"""
+        )["f"]
+        self.assertNotInBytecode(f, "LOAD_CONST", None)
+        returns = [
+            instr for instr in dis.get_instructions(f) if instr.opname == "RETURN_VALUE"
+        ]
+        self.assertEqual(len(returns), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
