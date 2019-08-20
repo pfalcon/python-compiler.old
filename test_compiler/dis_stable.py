@@ -43,7 +43,7 @@ def dis(co):
     disassemble(co)
     print("co_argcount:", co.co_argcount)
     print("co_kwonlyargcount:", co.co_kwonlyargcount)
-#    print("co_stacksize:", co.co_stacksize)
+    print("co_stacksize:", co.co_stacksize)
 #    print("co_flags:", hex(co.co_flags))
     print("co_consts:", tuple([co_repr(x) if hasattr(x, "co_code") else x for x in co.co_consts]))
     print("co_firstlineno:", co.co_firstlineno)
