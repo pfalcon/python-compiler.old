@@ -334,7 +334,6 @@ class Optimizer:
         block_id = self.blocks[i]
         while h < len(self.codestr) // 2 and self.blocks[h] == block_id:
             h += 1
-
         if h > i + 1:
             self.fill_nops(i + 1, h)
             nexti = self.find_op(h)

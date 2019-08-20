@@ -297,7 +297,7 @@ class PyFlowGraph(FlowGraph):
             self.flags = CO_OPTIMIZED | CO_NEWLOCALS
         else:
             self.flags = 0
-        self.consts = []
+        self.consts = {}
         self.names = []
         # Free variables found by the symbol table scan, including
         # variables used only in nested scopes, are included here.
@@ -460,8 +460,13 @@ class PyFlowGraph(FlowGraph):
         # (Other types of code objects deal with docstrings in different
         # manner, e.g. lambdas and comprehensions don't have docstrings,
         # classes store them as __doc__ attribute.
-        if self.name == "<lambda>" or (not self.name.startswith("<") and not self.klass):
-            self.consts.insert(0, self.docstring)
+        if self.name == "<lambda>":
+            self.consts[type(None), None] = 0
+        elif not self.name.startswith("<") and not self.klass:
+            if self.docstring is not None:
+                self.consts[str, self.docstring] = 0
+            else:
+                self.consts[type(None), None] = 0
         self.sort_cellvars()
 
         for b in self.getBlocksInOrder():
@@ -496,7 +501,14 @@ class PyFlowGraph(FlowGraph):
     def _convert_LOAD_CONST(self, arg):
         if hasattr(arg, 'getCode'):
             arg = arg.getCode()
-        return self._lookupName(arg, self.consts)
+            # TODO: Probably need to deal w/ +/- 0.0, and complex, and
+            # tuples/frozen sets of these items: See _PyCode_ConstantKey.
+            # But this matches _lookupName T52799029
+        key = (type(arg), arg)
+        res = self.consts.get(key, self)
+        if res is self:
+            res = self.consts[key] = len(self.consts)
+        return res
 
     def _convert_LOAD_FAST(self, arg):
         return self._lookupName(arg, self.varnames)
@@ -613,7 +625,7 @@ class PyFlowGraph(FlowGraph):
         objects recursively.
         """
         l = []
-        for elt in self.consts:
+        for t, elt in self.consts:
             if isinstance(elt, PyFlowGraph):
                 elt = elt.getCode()
             l.append(elt)
