@@ -322,6 +322,191 @@ def f():
         optcode = self.compile(code)
         self.assertNotInBytecode(optcode, "POP_JUMP_IF_FALSE")
 
+    def test_pack_unpack(self):
+        for line, elem in (
+            ("a, = a,", "LOAD_CONST"),
+            ("a, b = a, b", "ROT_TWO"),
+            ("a, b, c = a, b, c", "ROT_THREE"),
+        ):
+            code = self.compile(line)
+            self.assertInBytecode(code, elem)
+            self.assertNotInBytecode(code, "BUILD_TUPLE")
+            self.assertNotInBytecode(code, "UNPACK_TUPLE")
+
+    def test_folding_of_tuples_of_constants(self):
+        for line, elem in (
+            ("a = 1,2,3", (1, 2, 3)),
+            ('("a","b","c")', ("a", "b", "c")),
+            ("a,b,c = 1,2,3", (1, 2, 3)),
+            ("(None, 1, None)", (None, 1, None)),
+            ("((1, 2), 3, 4)", ((1, 2), 3, 4)),
+        ):
+            code = self.compile(line)
+            self.assertInBytecode(code, "LOAD_CONST", elem)
+            self.assertNotInBytecode(code, "BUILD_TUPLE")
+
+        # Long tuples should be folded too.
+        code = self.compile(repr(tuple(range(10000))))
+        self.assertNotInBytecode(code, "BUILD_TUPLE")
+        # One LOAD_CONST for the tuple, one for the None return value
+        load_consts = [
+            instr
+            for instr in dis.get_instructions(code)
+            if instr.opname == "LOAD_CONST"
+        ]
+        self.assertEqual(len(load_consts), 2)
+
+        # Bug 1053819:  Tuple of constants misidentified when presented with:
+        # . . . opcode_with_arg 100   unary_opcode   BUILD_TUPLE 1  . . .
+        # The following would segfault upon compilation
+        def crater():
+            (
+                ~[
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                ],
+            )
+
+    def test_folding_of_lists_of_constants(self):
+        for line, elem in (
+            # in/not in constants with BUILD_LIST should be folded to a tuple:
+            ("a in [1,2,3]", (1, 2, 3)),
+            ('a not in ["a","b","c"]', ("a", "b", "c")),
+            ("a in [None, 1, None]", (None, 1, None)),
+            ("a not in [(1, 2), 3, 4]", ((1, 2), 3, 4)),
+        ):
+            code = self.compile(line)
+            self.assertInBytecode(code, "LOAD_CONST", elem)
+            self.assertNotInBytecode(code, "BUILD_LIST")
+
+    def test_folding_of_sets_of_constants(self):
+        for line, elem in (
+            # in/not in constants with BUILD_SET should be folded to a frozenset:
+            ("a in {1,2,3}", frozenset({1, 2, 3})),
+            ('a not in {"a","b","c"}', frozenset({"a", "c", "b"})),
+            ("a in {None, 1, None}", frozenset({1, None})),
+            ("a not in {(1, 2), 3, 4}", frozenset({(1, 2), 3, 4})),
+            ("a in {1, 2, 3, 3, 2, 1}", frozenset({1, 2, 3})),
+        ):
+            code = self.compile(line)
+            self.assertNotInBytecode(code, "BUILD_SET")
+            self.assertInBytecode(code, "LOAD_CONST", elem)
+
+        # Ensure that the resulting code actually works:
+        d = self.run_code(
+            """
+def f(a):
+    return a in {1, 2, 3}
+
+def g(a):
+    return a not in {1, 2, 3}
+"""
+        )
+        f, g = d["f"], d["g"]
+        self.assertTrue(f(3))
+        self.assertTrue(not f(4))
+
+        self.assertTrue(not g(3))
+        self.assertTrue(g(4))
+
     def test_folding_of_binops_on_constants(self):
         for line, elem in (
             ("a = 2+3+4", 9),  # chained fold
@@ -385,7 +570,7 @@ def f():
         for line, elem in (
             ("-0.5", -0.5),  # unary negative
             ("-0.0", -0.0),  # -0.0
-            # ("-(1.0-1.0)", -0.0),  # -0.0 after folding
+            ("-(1.0-1.0)", -0.0),  # -0.0 after folding
             ("-0", 0),  # -0
             ("~-2", 1),  # unary invert
             ("+1", 1),  # unary positive
@@ -484,6 +669,26 @@ def f():
     return g"""
         )["f"]
         self.assertNotInBytecode(f, "BINARY_ADD")
+
+    def test_constant_folding(self):
+        # Issue #11244: aggressive constant folding.
+        exprs = [
+            "3 * -5",
+            "-3 * 5",
+            "2 * (3 * 4)",
+            "(2 * 3) * 4",
+            "(-1, 2, 3)",
+            "(1, -2, 3)",
+            "(1, 2, -3)",
+            "(1, 2, -3) * 6",
+            "lambda x: x in {(3 * -5) + (-1 - 6), (1, -2, 3) * 2, None}",
+        ]
+        for e in exprs:
+            code = self.compile(e)
+            for instr in dis.get_instructions(code):
+                self.assertFalse(instr.opname.startswith("UNARY_"))
+                self.assertFalse(instr.opname.startswith("BINARY_"))
+                self.assertFalse(instr.opname.startswith("BUILD_"))
 
 
 if __name__ == "__main__":

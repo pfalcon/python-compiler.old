@@ -21,12 +21,19 @@ BINARY_TRUE_DIVIDE = opmap["BINARY_TRUE_DIVIDE"]
 BINARY_XOR = opmap["BINARY_XOR"]
 
 COMPARE_OP = opmap["COMPARE_OP"]
+BUILD_LIST = opmap["BUILD_LIST"]
+BUILD_SET = opmap["BUILD_SET"]
+BUILD_TUPLE = opmap["BUILD_TUPLE"]
+GET_ITER = opmap["GET_ITER"]
 LOAD_CONST = opmap["LOAD_CONST"]
 RETURN_VALUE = opmap["RETURN_VALUE"]
+ROT_THREE = opmap["ROT_THREE"]
+ROT_TWO = opmap["ROT_TWO"]
 UNARY_INVERT = opmap["UNARY_INVERT"]
 UNARY_NEGATIVE = opmap["UNARY_NEGATIVE"]
 UNARY_NOT = opmap["UNARY_NOT"]
 UNARY_POSITIVE = opmap["UNARY_POSITIVE"]
+UNPACK_SEQUENCE = opmap["UNPACK_SEQUENCE"]
 
 CONTINUE_LOOP = opmap["CONTINUE_LOOP"]
 JUMP_ABSOLUTE = opmap["JUMP_ABSOLUTE"]
@@ -58,6 +65,18 @@ assert opcode.cmp_op.index('is') > CMP_OP_IN and opcode.cmp_op.index('is') < CMP
 
 
 assert (CMP_OP_IS_NOT - CMP_OP_IN) == 3
+
+PyCmp_LT = 0
+PyCmp_LE = 1
+PyCmp_EQ = 2
+PyCmp_NE = 3
+PyCmp_GT = 4
+PyCmp_GE = 5
+PyCmp_IN = 6
+PyCmp_NOT_IN = 7
+PyCmp_IS = 8
+PyCmp_IS_NOT = 9
+PyCmp_EXC_MATCH = 10
 
 
 UNARY_OPS = {
@@ -344,6 +363,64 @@ class Optimizer:
                 del self.const_stack[-1]
                 self.const_stack[-1] = self.consts[get_arg(self.codestr, i)]
                 self.in_consts = True
+
+    @ophandler(BUILD_TUPLE, BUILD_LIST, BUILD_SET)
+    def op_fold_sequences(self, i, opcode, op_start, nextop, nexti):
+        j = get_arg(self.codestr, i)
+        if j > 0 and len(self.const_stack) >= j:
+            h = self.lastn_const_start(op_start, j)
+            if (opcode == BUILD_TUPLE and self.is_basic_block(h, op_start)) or (
+                (opcode == BUILD_LIST or opcode == BUILD_SET)
+                and (
+                    (
+                        nextop == COMPARE_OP
+                        and (
+                            self.codestr[nexti * 2 + 1] == PyCmp_IN
+                            or self.codestr[nexti * 2 + 1] == PyCmp_NOT_IN
+                        )
+                    )
+                    or nextop == GET_ITER
+                )
+                and self.is_basic_block(h, i + 1)
+            ):
+                h = self.fold_build_into_constant_tuple(h, i + 1, opcode, j)
+                if h >= 0:
+                    del self.const_stack[-j:]
+                    self.const_stack.append(self.consts[get_arg(self.codestr, h)])
+                    self.in_consts = True
+                return
+
+        if (
+            nextop != UNPACK_SEQUENCE
+            or not self.is_basic_block(op_start, i + 1)
+            or j != get_arg(self.codestr, nexti)
+            or opcode == BUILD_SET
+        ):
+            return
+
+        if j < 2:
+            self.fill_nops(op_start, nexti + 1)
+        elif j == 2:
+            self.codestr[op_start * 2] = ROT_TWO
+            self.codestr[op_start * 2 + 1] = 0
+            self.fill_nops(op_start + 1, nexti + 1)
+            del self.const_stack[:]
+        elif j == 3:
+            self.codestr[op_start * 2] = ROT_THREE
+            self.codestr[op_start * 2 + 1] = 0
+            self.codestr[(op_start + 1) * 2] = ROT_TWO
+            self.codestr[(op_start + 1) * 2 + 1] = 0
+            self.fill_nops(op_start + 2, nexti + 1)
+            del self.const_stack[:]
+
+    def fold_build_into_constant_tuple(self, c_start, opcode_end, opcode, n):
+        if opcode == BUILD_SET:
+            newconst = frozenset(self.const_stack[-n:])
+        else:
+            newconst = tuple(self.const_stack[-n:])
+
+        self.consts.append(newconst)
+        return self.copy_op_arg(c_start, LOAD_CONST, len(self.consts) - 1, opcode_end)
 
     def fold_binops_on_constants(self, c_start, opcode_end, opcode):
         l = self.const_stack[-2]
