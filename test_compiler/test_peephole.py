@@ -300,6 +300,11 @@ def f():
         self.assertInBytecode(code, "EXTENDED_ARG", 0)
         self.assertInBytecode(code, "POP_JUMP_IF_TRUE", 6)
 
+    def test_load_const_branch(self):
+        code = "x = 1 if 1 else 2"
+        optcode = self.compile(code)
+        self.assertNotInBytecode(optcode, "POP_JUMP_IF_FALSE")
+
 
 if __name__ == "__main__":
     unittest.main()

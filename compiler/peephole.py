@@ -7,6 +7,7 @@ from typing import Generator
 NOP = opmap["NOP"]
 
 COMPARE_OP = opmap["COMPARE_OP"]
+LOAD_CONST = opmap["LOAD_CONST"]
 UNARY_NOT = opmap["UNARY_NOT"]
 
 CONTINUE_LOOP = opmap["CONTINUE_LOOP"]
@@ -90,6 +91,7 @@ class Optimizer:
     def __init__(self, code: CodeType) -> None:
         assert len(code.co_code) % 2 == 0
         self.code = code
+        self.consts = code.co_consts
         self.codestr = bytearray(code.co_code)
         self.blocks = self.markblocks()
 
@@ -169,6 +171,22 @@ class Optimizer:
 
         self.codestr[i * 2 + 1] = j ^ 1
         self.fill_nops(i + 1, nexti + 1)
+
+    @ophandler(LOAD_CONST)
+    def opt_load_const(self, i, opcode, op_start, nextop, nexti):
+        # Skip over LOAD_CONST trueconst
+        # POP_JUMP_IF_FALSE xx.  This improves
+        # "while 1" performance.
+        # The above comment is from CPython.  This optimization is now performed
+        # at the AST level and is also applied to if statements.  But it does
+        # not get applied to conditionals, e.g. 1 if 2 else 3
+        if (
+            nextop != POP_JUMP_IF_FALSE
+            or not self.is_basic_block(op_start, i + 1)
+            or not bool(self.consts[get_arg(self.codestr, i)])
+        ):
+            return
+        self.fill_nops(op_start, nexti + 1)
 
     def make_new_code(self, codestr, lnotab):
         return CodeType(
