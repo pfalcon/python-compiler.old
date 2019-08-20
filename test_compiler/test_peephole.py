@@ -322,11 +322,70 @@ def f():
         optcode = self.compile(code)
         self.assertNotInBytecode(optcode, "POP_JUMP_IF_FALSE")
 
+    def test_folding_of_binops_on_constants(self):
+        for line, elem in (
+            ("a = 2+3+4", 9),  # chained fold
+            ('"@"*4', "@@@@"),  # check string ops
+            ('a="abc" + "def"', "abcdef"),  # check string ops
+            ("a = 3**4", 81),  # binary power
+            ("a = 3*4", 12),  # binary multiply
+            ("a = 13//4", 3),  # binary floor divide
+            ("a = 14%4", 2),  # binary modulo
+            ("a = 2+3", 5),  # binary add
+            ("a = 13-4", 9),  # binary subtract
+            # ('a = (12,13)[1]', 13),             # binary subscr
+            ("a = 13 << 2", 52),  # binary lshift
+            ("a = 13 >> 2", 3),  # binary rshift
+            ("a = 13 & 7", 5),  # binary and
+            ("a = 13 ^ 7", 10),  # binary xor
+            ("a = 13 | 7", 15),  # binary or
+            ("a = 2 ** -14", 6.103515625e-05),  # binary power neg rhs
+        ):
+            code = self.compile(line)
+            self.assertInBytecode(code, "LOAD_CONST", elem)
+            for instr in dis.get_instructions(code):
+                self.assertFalse(instr.opname.startswith("BINARY_"))
+
+        # Verify that unfoldables are skipped
+        code = self.compile('a=2+"b"')
+        self.assertInBytecode(code, "LOAD_CONST", 2)
+        self.assertInBytecode(code, "LOAD_CONST", "b")
+
+        # Verify that large sequences do not result from folding
+        code = self.compile('a="x"*10000')
+        self.assertInBytecode(code, "LOAD_CONST", 10000)
+        self.assertNotIn("x" * 10000, code.co_consts)
+        code = self.compile("a=1<<1000")
+        self.assertInBytecode(code, "LOAD_CONST", 1000)
+        self.assertNotIn(1 << 1000, code.co_consts)
+        code = self.compile("a=2**1000")
+        self.assertInBytecode(code, "LOAD_CONST", 1000)
+        self.assertNotIn(2 ** 1000, code.co_consts)
+
+    def test_binary_subscr_on_unicode(self):
+        # valid code get optimized
+        code = self.compile('"foo"[0]')
+        self.assertInBytecode(code, "LOAD_CONST", "f")
+        self.assertNotInBytecode(code, "BINARY_SUBSCR")
+        code = self.compile('"\u0061\uffff"[1]')
+        self.assertInBytecode(code, "LOAD_CONST", "\uffff")
+        self.assertNotInBytecode(code, "BINARY_SUBSCR")
+
+        # With PEP 393, non-BMP char get optimized
+        code = self.compile('"\U00012345"[0]')
+        self.assertInBytecode(code, "LOAD_CONST", "\U00012345")
+        self.assertNotInBytecode(code, "BINARY_SUBSCR")
+
+        # invalid code doesn't get optimized
+        # out of range
+        code = self.compile('"fuu"[10]')
+        self.assertInBytecode(code, "BINARY_SUBSCR")
+
     def test_folding_of_unaryops_on_constants(self):
         for line, elem in (
             ("-0.5", -0.5),  # unary negative
             ("-0.0", -0.0),  # -0.0
-            # ('-(1.0-1.0)', -0.0),               # -0.0 after folding
+            # ("-(1.0-1.0)", -0.0),  # -0.0 after folding
             ("-0", 0),  # -0
             ("~-2", 1),  # unary invert
             ("+1", 1),  # unary positive
@@ -373,6 +432,58 @@ def f(x):
             instr for instr in dis.get_instructions(f) if instr.opname == "RETURN_VALUE"
         ]
         self.assertEqual(len(returns), 1)
+
+    def test_elim_jump_after_return1(self):
+        # Eliminate dead code: jumps immediately after returns can't be reached
+        f = self.run_code(
+            """
+def f(cond1, cond2):
+    if cond1: return 1
+    if cond2: return 2
+    while 1:
+        return 3
+    while 1:
+        if cond1: return 4
+        return 5
+    return 6"""
+        )["f"]
+        self.assertNotInBytecode(f, "JUMP_FORWARD")
+        self.assertNotInBytecode(f, "JUMP_ABSOLUTE")
+        returns = [
+            instr for instr in dis.get_instructions(f) if instr.opname == "RETURN_VALUE"
+        ]
+        self.assertLessEqual(len(returns), 6)
+
+    def test_elim_jump_after_return2(self):
+        # Eliminate dead code: jumps immediately after returns can't be reached
+        f = self.run_code(
+            """
+def f(cond1, cond2):
+    while 1:
+        if cond1: return 4"""
+        )["f"]
+        self.assertNotInBytecode(f, "JUMP_FORWARD")
+        # There should be one jump for the while loop.
+        returns = [
+            instr
+            for instr in dis.get_instructions(f)
+            if instr.opname == "JUMP_ABSOLUTE"
+        ]
+        self.assertEqual(len(returns), 1)
+        returns = [
+            instr for instr in dis.get_instructions(f) if instr.opname == "RETURN_VALUE"
+        ]
+        self.assertLessEqual(len(returns), 2)
+
+    def test_make_function_doesnt_bail(self):
+        f = self.run_code(
+            """
+def f():
+    def g()->1+1:
+        pass
+    return g"""
+        )["f"]
+        self.assertNotInBytecode(f, "BINARY_ADD")
 
 
 if __name__ == "__main__":

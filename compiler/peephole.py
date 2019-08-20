@@ -6,6 +6,20 @@ from typing import Generator
 
 NOP = opmap["NOP"]
 
+BINARY_ADD = opmap["BINARY_ADD"]
+BINARY_AND = opmap["BINARY_AND"]
+BINARY_FLOOR_DIVIDE = opmap["BINARY_FLOOR_DIVIDE"]
+BINARY_LSHIFT = opmap["BINARY_LSHIFT"]
+BINARY_MODULO = opmap["BINARY_MODULO"]
+BINARY_MULTIPLY = opmap["BINARY_MULTIPLY"]
+BINARY_OR = opmap["BINARY_OR"]
+BINARY_POWER = opmap["BINARY_POWER"]
+BINARY_RSHIFT = opmap["BINARY_RSHIFT"]
+BINARY_SUBSCR = opmap["BINARY_SUBSCR"]
+BINARY_SUBTRACT = opmap["BINARY_SUBTRACT"]
+BINARY_TRUE_DIVIDE = opmap["BINARY_TRUE_DIVIDE"]
+BINARY_XOR = opmap["BINARY_XOR"]
+
 COMPARE_OP = opmap["COMPARE_OP"]
 LOAD_CONST = opmap["LOAD_CONST"]
 RETURN_VALUE = opmap["RETURN_VALUE"]
@@ -50,6 +64,89 @@ UNARY_OPS = {
     UNARY_INVERT: lambda v: ~v,
     UNARY_NEGATIVE: lambda v: -v,
     UNARY_POSITIVE: lambda v: +v,
+}
+
+MAX_INT_SIZE = 128
+MAX_COLLECTION_SIZE = 20
+MAX_STR_SIZE = 20
+MAX_TOTAL_ITEMS = 1024
+
+
+def check_complexity(obj, limit):
+    if isinstance(obj, (frozenset, tuple)):
+        limit -= len(obj)
+        for item in obj:
+            limit = check_complexity(item, limit)
+            if limit < 0:
+                break
+
+    return limit
+
+
+def safe_multiply(l, r):
+    if isinstance(l, int) and isinstance(r, int) and l and r:
+        lbits = l.bit_length()
+        rbits = r.bit_length()
+        if lbits + rbits > MAX_INT_SIZE:
+            raise OverflowError()
+    elif isinstance(l, int) and isinstance(r, (tuple, frozenset)):
+        rsize = len(r)
+        if rsize:
+            if l < 0 or l > MAX_COLLECTION_SIZE / rsize:
+                raise OverflowError()
+            if l:
+                if check_complexity(r, MAX_TOTAL_ITEMS / l) < 0:
+                    raise OverflowError()
+    elif isinstance(l, int) and isinstance(r, (str, bytes)):
+        rsize = len(r)
+        if rsize:
+            if l < 0 or l > MAX_STR_SIZE / rsize:
+                raise OverflowError()
+    elif isinstance(r, int) and isinstance(l, (tuple, frozenset, str, bytes)):
+        return safe_multiply(r, l)
+
+    return l * r
+
+
+def safe_power(l, r):
+    if isinstance(l, int) and isinstance(r, int) and l and r > 0:
+        lbits = l.bit_length()
+        if lbits > MAX_INT_SIZE / r:
+            raise OverflowError()
+
+    return l ** r
+
+
+def safe_mod(l, r):
+    if isinstance(l, (str, bytes)):
+        raise OverflowError()
+
+    return l % r
+
+
+def safe_lshift(l, r):
+    if isinstance(l, int) and isinstance(r, int) and l and r:
+        lbits = l.bit_length()
+        if r < 0 or r > MAX_INT_SIZE or lbits > MAX_INT_SIZE - r:
+            raise OverflowError()
+
+    return l << r
+
+
+BINARY_OPS = {
+    BINARY_POWER: safe_power,
+    BINARY_MULTIPLY: safe_multiply,
+    BINARY_TRUE_DIVIDE: lambda l, r: l / r,
+    BINARY_FLOOR_DIVIDE: lambda l, r: l // r,
+    BINARY_MODULO: safe_mod,
+    BINARY_ADD: lambda l, r: l + r,
+    BINARY_SUBTRACT: lambda l, r: l - r,
+    BINARY_SUBSCR: lambda l, r: l[r],
+    BINARY_LSHIFT: safe_lshift,
+    BINARY_RSHIFT: lambda l, r: l >> r,
+    BINARY_AND: lambda l, r: l & r,
+    BINARY_XOR: lambda l, r: l ^ r,
+    BINARY_OR: lambda l, r: l | r,
 }
 
 
@@ -235,6 +332,32 @@ class Optimizer:
             if h >= 0:
                 self.const_stack[-1] = self.consts[get_arg(self.codestr, i)]
                 self.in_consts = True
+
+    @ophandler(*BINARY_OPS)
+    def op_binary_constants(self, i, opcode, op_start, nextop, nexti):
+        if len(self.const_stack) < 2:
+            return
+        h = self.lastn_const_start(op_start, 2)
+        if self.is_basic_block(h, op_start):
+            h = self.fold_binops_on_constants(h, i + 1, opcode)
+            if h >= 0:
+                del self.const_stack[-1]
+                self.const_stack[-1] = self.consts[get_arg(self.codestr, i)]
+                self.in_consts = True
+
+    def fold_binops_on_constants(self, c_start, opcode_end, opcode):
+        l = self.const_stack[-2]
+        r = self.const_stack[-1]
+        try:
+            v = BINARY_OPS[opcode](l, r)
+        except Exception:
+            return -1
+
+        # CPython does nothing to optimize these, and doing something like
+        # -+-+-+-+-+-+-+-+42  just bloats the constant table with unused entries
+        self.consts.append(v)
+
+        return self.copy_op_arg(c_start, LOAD_CONST, len(self.consts) - 1, opcode_end)
 
     def fold_unaryops_on_constants(self, c_start, opcode_end, opcode):
         v = self.const_stack[-1]
