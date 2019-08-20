@@ -6,6 +6,7 @@ from typing import Generator
 
 NOP = opmap["NOP"]
 
+COMPARE_OP = opmap["COMPARE_OP"]
 UNARY_NOT = opmap["UNARY_NOT"]
 
 CONTINUE_LOOP = opmap["CONTINUE_LOOP"]
@@ -25,6 +26,16 @@ SETUP_WITH = opmap["SETUP_WITH"]
 
 ABS_JUMPS = set(opcode.hasjabs)
 REL_JUMPS = set(opcode.hasjrel)
+
+
+CMP_OP_IN = opcode.cmp_op.index('in')
+CMP_OP_IS_NOT = opcode.cmp_op.index('is not')
+
+assert CMP_OP_IN < CMP_OP_IS_NOT
+assert opcode.cmp_op.index('not in') > CMP_OP_IN and opcode.cmp_op.index('not in') < CMP_OP_IS_NOT
+assert opcode.cmp_op.index('is') > CMP_OP_IN and opcode.cmp_op.index('is') < CMP_OP_IS_NOT
+
+assert (CMP_OP_IS_NOT - CMP_OP_IN) == 3
 
 
 def get_op(code, i):
@@ -140,6 +151,24 @@ class Optimizer:
 
         self.fill_nops(op_start, i + 1)
         self.codestr[nexti * 2] = POP_JUMP_IF_TRUE
+
+    @ophandler(COMPARE_OP)
+    def opt_compare_op(self, i, opcode, op_start, nextop, nexti):
+        # not a is b -->  a is not b
+        # not a in b -->  a not in b
+        # not a is not b -->  a is b
+        # not a not in b -->  a in b
+        j = get_arg(self.codestr, i)
+        if (
+            j < CMP_OP_IN
+            or j > CMP_OP_IS_NOT
+            or nextop != UNARY_NOT
+            or not self.is_basic_block(op_start, i + 1)
+        ):
+            return
+
+        self.codestr[i * 2 + 1] = j ^ 1
+        self.fill_nops(i + 1, nexti + 1)
 
     def make_new_code(self, codestr, lnotab):
         return CodeType(

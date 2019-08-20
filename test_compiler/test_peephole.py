@@ -34,6 +34,16 @@ def unot(x):
         self.assertNotInBytecode(unot, "POP_JUMP_IF_FALSE")
         self.assertInBytecode(unot, "POP_JUMP_IF_TRUE")
 
+    def test_elim_inversion_of_is_or_in(self):
+        for line, cmp_op in (
+            ("not a is b", "is not"),
+            ("not a in b", "not in"),
+            ("not a is not b", "is"),
+            ("not a not in b", "in"),
+        ):
+            code = self.compile(line)
+            self.assertInBytecode(code, "COMPARE_OP", cmp_op)
+
     def test_while_one(self):
         # Skip over:  LOAD_CONST trueconst  POP_JUMP_IF_FALSE xx
         f = self.run_code(
