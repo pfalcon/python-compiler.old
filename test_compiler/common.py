@@ -1,5 +1,6 @@
 import ast
 import glob
+import inspect
 import compiler.pycodegen
 from .bytecode_helper import BytecodeTestCase
 from types import CodeType
@@ -29,6 +30,7 @@ class CompilerTest(BytecodeTestCase):
         return d
 
     def to_graph(self, code):
+        code = inspect.cleandoc("\n" + code)
         tree = ast.parse(code)
         tree.filename = ""
         gen = compiler.pycodegen.ModuleCodeGenerator(tree, True)

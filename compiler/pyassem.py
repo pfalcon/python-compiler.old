@@ -141,7 +141,7 @@ class FlowGraph:
         return b
 
     def startExitBlock(self):
-        self.startBlock(self.exit)
+        self.nextBlock(self.exit)
 
     _debug = 0
 
@@ -200,12 +200,19 @@ class Block:
         self.prev = []
         self.returns = False
         self.offset = 0
+        self.seen = False # visited during stack depth calculation
+        self.startdepth = -1
 
     def __repr__(self):
+        data = []
+        data.append(f'id={self.bid}')
+        if self.next:
+            data.append(f'next={self.next[0].bid}')
+        extras = ", ".join(data)
         if self.label:
-            return "<block %s id=%d>" % (self.label, self.bid)
+            return f"<block {self.label} {extras}>"
         else:
-            return "<block id=%d>" % (self.bid)
+            return f"<block {extras}>"
 
     def __str__(self):
         insts = map(str, self.insts)
@@ -365,35 +372,60 @@ class PyFlowGraph(FlowGraph):
         if io:
             sys.stdout = save
 
+    def stackdepth_walk(self, block, depth, maxdepth):
+        if block.seen or block.startdepth >= depth:
+            return maxdepth
+        block.seen = True
+        block.startdepth = depth
+        for instr in block.getInstructions():
+            effect = STACK_EFFECTS.get(instr.opname)
+            if effect is None:
+                raise ValueError(f"Error, opcode {instr.opname} was not found, please update STACK_EFFECTS")
+            if isinstance(effect, int):
+                depth += effect
+            else:
+                depth += effect(instr.oparg)
+
+            assert depth >= 0
+
+            if depth > maxdepth:
+                maxdepth = depth
+
+            if instr.target:
+                target_depth = depth
+                if instr.opname == "FOR_ITER":
+                    target_depth = depth - 2
+                elif instr.opname in ("SETUP_FINALLY", "SETUP_EXCEPT"):
+                    target_depth = depth + 3
+                    if target_depth > maxdepth:
+                        maxdepth = target_depth
+                elif instr.opname in ("JUMP_IF_TRUE_OR_POP", "JUMP_IF_FALSE_OR_POP"):
+                    depth -= 1
+                maxdepth = self.stackdepth_walk(instr.target, target_depth, maxdepth)
+                if instr.opname in ("JUMP_ABSOLUTE", "JUMP_FORWARD"):
+                    # Remaining code is dead
+                    block.seen = False
+                    return maxdepth
+
+        if block.next:
+            assert len(block.next) == 1
+            maxdepth = self.stackdepth_walk(block.next[0], depth, maxdepth)
+
+        block.seen = False
+        return maxdepth
+
+
     def computeStackDepth(self):
         """Compute the max stack depth.
 
-        Approach is to compute the stack effect of each basic block.
-        Then find the path through the code with the largest total
-        effect.
+        Find the flow path that needs the largest stack.  We assume that
+        cycles in the flow graph have no net effect on the stack depth.
         """
-        depth = {}
-        exit = None
-        for b in self.getBlocks():
-            depth[b] = findDepth(b.getInstructions())
-
-        seen = {}
-
-        def max_depth(b, d):
-            if b in seen:
-                return d
-            seen[b] = 1
-            d = d + depth[b]
-            children = b.get_children()
-            if children:
-                return max([max_depth(c, d) for c in children])
-            else:
-                if not b.label == "exit":
-                    return max_depth(self.exit, d)
-                else:
-                    return d
-
-        self.stacksize = max_depth(self.entry, 0)
+        for block in self.getBlocksInOrder():
+            # We need to get to the first block which actually has instructions
+            if block.getInstructions():
+                self.stacksize = self.stackdepth_walk(block, 0, 0)
+                break
 
     def flattenGraph(self):
         """Arrange the blocks in order and resolve jumps"""
@@ -712,121 +744,151 @@ class LineAddrTable:
     def getTable(self):
         return bytes(self.lnotab)
 
-class StackDepthTracker:
-    # XXX 1. need to keep track of stack depth on jumps
-    # XXX 2. at least partly as a result, this code is broken
+STACK_EFFECTS = dict(
+    POP_TOP = -1,
+    ROT_TWO = 0,
+    ROT_THREE = 0,
+    DUP_TOP = 1,
+    DUP_TOP_TWO = 2,
 
-    def findDepth(self, insts, debug=0):
-        depth = 0
-        maxDepth = 0
-        for i in insts:
-            opname = i.opname
-            if debug:
-                print(i, end="")
-            delta = self.effect.get(opname, None)
-            if delta is not None:
-                depth = depth + delta
-            else:
-                # now check patterns
-                for pat, pat_delta in self.patterns:
-                    if opname[:len(pat)] == pat:
-                        delta = pat_delta
-                        depth = depth + delta
-                        break
-                # if we still haven't found a match
-                if delta is None:
-                    meth = getattr(self, opname, None)
-                    if meth is not None:
-                        depth = depth + meth(i.oparg)
-            if depth > maxDepth:
-                maxDepth = depth
-            if debug:
-                print(depth, maxDepth)
-        return maxDepth
+    UNARY_POSITIVE = 0,
+    UNARY_NEGATIVE = 0,
+    UNARY_NOT = 0,
+    UNARY_INVERT = 0,
 
-    effect = {
-        'POP_TOP': -1,
-        'DUP_TOP': 1,
-        'LIST_APPEND': -1,
-        'SET_ADD': -1,
-        'MAP_ADD': -2,
-        'SLICE+1': -1,
-        'SLICE+2': -1,
-        'SLICE+3': -2,
-        'STORE_SLICE+0': -1,
-        'STORE_SLICE+1': -2,
-        'STORE_SLICE+2': -2,
-        'STORE_SLICE+3': -3,
-        'DELETE_SLICE+0': -1,
-        'DELETE_SLICE+1': -2,
-        'DELETE_SLICE+2': -2,
-        'DELETE_SLICE+3': -3,
-        'STORE_SUBSCR': -3,
-        'DELETE_SUBSCR': -2,
-        # PRINT_EXPR?
-        'PRINT_ITEM': -1,
-        'RETURN_VALUE': -1,
-        'YIELD_VALUE': -1,
-        'EXEC_STMT': -3,
-        'BUILD_CLASS': -2,
-        'STORE_NAME': -1,
-        'STORE_ATTR': -2,
-        'DELETE_ATTR': -1,
-        'STORE_GLOBAL': -1,
-        'BUILD_MAP': 1,
-        'COMPARE_OP': -1,
-        'STORE_FAST': -1,
-        'IMPORT_STAR': -1,
-        'IMPORT_NAME': -1,
-        'IMPORT_FROM': 1,
-        'LOAD_ATTR': 0, # unlike other loads
-        # close enough...
-        'SETUP_EXCEPT': 3,
-        'SETUP_FINALLY': 3,
-        'FOR_ITER': 1,
-        'WITH_CLEANUP': -1,
-        'JUMP_IF_TRUE_OR_POP': -1, # approximation
-        'JUMP_IF_FALSE_OR_POP': -1, # approximation
-        }
-    # use pattern match
-    patterns = [
-        ('BINARY_', -1),
-        ('LOAD_', 1),
-        ]
+    SET_ADD = -1,
+    LIST_APPEND = -1,
+    MAP_ADD = -2,
 
-    def UNPACK_SEQUENCE(self, count):
-        return count-1
-    def BUILD_TUPLE(self, count):
-        return -count+1
-    def BUILD_LIST(self, count):
-        return -count+1
-    def BUILD_SET(self, count):
-        return -count+1
-    def CALL_FUNCTION(self, argc):
-        hi, lo = divmod(argc, 256)
-        return -(lo + hi * 2)
-    def CALL_FUNCTION_VAR(self, argc):
-        return self.CALL_FUNCTION(argc)-1
-    def CALL_FUNCTION_KW(self, argc):
-        return self.CALL_FUNCTION(argc)-1
-    def CALL_FUNCTION_VAR_KW(self, argc):
-        return self.CALL_FUNCTION(argc)-2
-    def MAKE_FUNCTION(self, oparg):
-        return -1 - ((oparg & 0x01) != 0) - ((oparg & 0x02) != 0) - ((oparg & 0x04) != 0) - ((oparg & 0x08) != 0)
-    def MAKE_CLOSURE(self, argc):
-        # XXX need to account for free variables too!
-        return -argc
-    def BUILD_SLICE(self, argc):
-        if argc == 2:
-            return -1
-        elif argc == 3:
-            return -2
-    def FORMAT_VALUE(self, argc):
-        return -1 if (argc & FVS_MASK) == FVS_HAVE_SPEC else 0
-    def BUILD_STRING(self, argc):
-        return 1 - argc
+    BINARY_POWER = -1,
+    BINARY_MULTIPLY = -1,
+    BINARY_MATRIX_MULTIPLY = -1,
+    BINARY_MODULO = -1,
+    BINARY_ADD = -1,
+    BINARY_SUBTRACT = -1,
+    BINARY_SUBSCR = -1,
+    BINARY_FLOOR_DIVIDE = -1,
+    BINARY_TRUE_DIVIDE = -1,
 
-    def DUP_TOPX(self, argc):
-        return argc
+    INPLACE_FLOOR_DIVIDE = -1,
+    INPLACE_TRUE_DIVIDE = -1,
 
-findDepth = StackDepthTracker().findDepth
+    INPLACE_ADD = -1,
+    INPLACE_SUBTRACT = -1,
+    INPLACE_MULTIPLY = -1,
+    INPLACE_MATRIX_MULTIPLY = -1,
+    INPLACE_MODULO = -1,
+
+    STORE_SUBSCR = -3,
+    DELETE_SUBSCR = -2,
+
+    BINARY_LSHIFT = -1,
+    BINARY_RSHIFT = -1,
+    BINARY_AND = -1,
+    BINARY_XOR = -1,
+    BINARY_OR = -1,
+
+    INPLACE_POWER = -1,
+    GET_ITER = 0,
+
+    PRINT_EXPR = -1,
+
+    LOAD_BUILD_CLASS = 1,
+
+    INPLACE_LSHIFT = -1,
+    INPLACE_RSHIFT = -1,
+    INPLACE_AND = -1,
+    INPLACE_XOR = -1,
+    INPLACE_OR = -1,
+
+    BREAK_LOOP = 0,
+    SETUP_WITH = 7,
+    WITH_CLEANUP_START = 1,
+    WITH_CLEANUP_FINISH = -1,  # XXX Sometimes more
+
+    RETURN_VALUE = -1,
+    IMPORT_STAR = -1,
+    SETUP_ANNOTATIONS = 0,
+    YIELD_VALUE = 0,
+    YIELD_FROM = -1,
+    POP_BLOCK = 0,
+    POP_EXCEPT = 0,  #  -3 except if bad bytecode
+    END_FINALLY = -1,  # or -2 or -3 if exception occurred
+
+    STORE_NAME = -1,
+    DELETE_NAME = 0,
+    UNPACK_SEQUENCE = lambda oparg: oparg - 1,
+    UNPACK_EX = lambda oparg: (oparg & 0xFF) + (oparg >> 8),
+    FOR_ITER = 1,  # or -1, at end of iterator
+
+    STORE_ATTR = -2,
+    DELETE_ATTR = -1,
+    STORE_GLOBAL = -1,
+    DELETE_GLOBAL = 0,
+    LOAD_CONST = 1,
+    LOAD_NAME = 1,
+
+    BUILD_TUPLE = lambda oparg: 1 - oparg,
+    BUILD_LIST = lambda oparg: 1 - oparg,
+    BUILD_SET = lambda oparg: 1 - oparg,
+    BUILD_STRING =  lambda oparg: 1 - oparg,
+
+    BUILD_LIST_UNPACK = lambda oparg: 1 - oparg,
+    BUILD_TUPLE_UNPACK = lambda oparg: 1 - oparg,
+    BUILD_TUPLE_UNPACK_WITH_CALL = lambda oparg: 1 - oparg,
+    BUILD_SET_UNPACK = lambda oparg: 1 - oparg,
+    BUILD_MAP_UNPACK = lambda oparg: 1 - oparg,
+    BUILD_MAP_UNPACK_WITH_CALL = lambda oparg: 1 - oparg,
+
+    BUILD_MAP = lambda oparg: 1 - 2 * oparg,
+    BUILD_CONST_KEY_MAP = lambda oparg: -oparg,
+    LOAD_ATTR = 0,
+    COMPARE_OP = -1,
+    IMPORT_NAME = -1,
+    IMPORT_FROM = 1,
+
+    JUMP_FORWARD = 0,
+    JUMP_IF_TRUE_OR_POP = 0,  # -1 if jump not taken
+    JUMP_IF_FALSE_OR_POP = 0,  # ""
+    JUMP_ABSOLUTE = 0,
+
+    POP_JUMP_IF_FALSE = -1,
+    POP_JUMP_IF_TRUE = -1,
+
+    LOAD_GLOBAL = 1,
+
+    CONTINUE_LOOP = 0,
+    SETUP_LOOP = 0,
+    # close enough...
+    SETUP_EXCEPT = 6,
+    SETUP_FINALLY = 6,  # can push 3 values for the new exception
+                        # + 3 others for the previous exception state
+
+    LOAD_FAST = 1,
+    STORE_FAST = -1,
+    DELETE_FAST = 0,
+    STORE_ANNOTATION = -1,
+
+    RAISE_VARARGS = lambda oparg: -oparg,
+    CALL_FUNCTION = lambda oparg: -oparg,
+    CALL_FUNCTION_KW = lambda oparg: -oparg - 1,
+    CALL_FUNCTION_EX = lambda oparg:  -1 - ((oparg & 0x01) != 0),
+    MAKE_FUNCTION = lambda oparg: -1 - ((oparg & 0x01) != 0) - ((oparg & 0x02) != 0) - ((oparg & 0x04) != 0) - ((oparg & 0x08) != 0),
+    BUILD_SLICE = lambda oparg: -2 if oparg == 3 else -1,
+
+    LOAD_CLOSURE = 1,
+    LOAD_DEREF = 1,
+    LOAD_CLASSDEREF = 1,
+    STORE_DEREF = -1,
+    DELETE_DEREF = 0,
+    GET_AWAITABLE = 0,
+    SETUP_ASYNC_WITH = 6,
+    BEFORE_ASYNC_WITH = 1,
+    GET_AITER = 0,
+    GET_ANEXT = 1,
+    GET_YIELD_FROM_ITER = 0,
+    # If there's a fmt_spec on the stack, we go from 2->1,
+    # else 1->1.
+    FORMAT_VALUE = lambda oparg: -1 if (oparg & FVS_MASK) == FVS_HAVE_SPEC else 0,
+    SET_LINENO = 0,
+)

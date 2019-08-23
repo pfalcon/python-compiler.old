@@ -249,7 +249,6 @@ class CodeGenerator:
     def _setupGraphDelegation(self):
         self.emit = self.graph.emit
         self.newBlock = self.graph.newBlock
-        self.startBlock = self.graph.startBlock
         self.nextBlock = self.graph.nextBlock
         self.setDocstring = self.graph.setDocstring
 
@@ -545,7 +544,7 @@ class CodeGenerator:
             if test_const is None:
                 self.emit('JUMP_FORWARD', end)
             if test_const != True:
-                self.startBlock(orelse)
+                self.nextBlock(orelse)
                 self.visit(node.orelse)
 
         self.nextBlock(end)
@@ -572,12 +571,13 @@ class CodeGenerator:
             self.visit(node.test)
             self.emit('POP_JUMP_IF_FALSE', else_ or after)
 
-        self.nextBlock()
+        self.nextBlock(label='while_body')
         self.visit(node.body)
         self.emit('JUMP_ABSOLUTE', loop)
 
-        if not is_constant_true(node.test):  # TODO: Workaround for weird block linking implementation
-            self.startBlock(else_ or after) # or just the POPs if not else clause
+        if not is_constant_true(node.test):
+            self.nextBlock(else_ or after) # or just the POPs if not else clause
+
         self.emit('POP_BLOCK')
         self.setups.pop()
         if node.orelse:
@@ -608,12 +608,12 @@ class CodeGenerator:
         self.nextBlock(after)
 
     def visitAsyncFor(self, node):
-        try_ = self.newBlock()
-        except_ = self.newBlock()
-        end = self.newBlock()
-        after_try = self.newBlock()
-        try_cleanup = self.newBlock()
-        after_loop_else = self.newBlock()
+        try_ = self.newBlock('async_for_try')
+        except_ = self.newBlock('except')
+        end = self.newBlock('end')
+        after_try = self.newBlock('after_try')
+        try_cleanup = self.newBlock('try_cleanup')
+        after_loop_else = self.newBlock('after_loop_else')
 
         self.set_lineno(node)
 
@@ -638,7 +638,7 @@ class CodeGenerator:
         self.setups.pop()
         self.emit('JUMP_FORWARD', after_try)
 
-        self.startBlock(except_)
+        self.nextBlock(except_)
         self.emit('DUP_TOP')
         self.emit('LOAD_GLOBAL', 'StopAsyncIteration')
 
@@ -659,7 +659,7 @@ class CodeGenerator:
         self.emit('POP_BLOCK')
         self.setups.pop()
 
-        self.startBlock(after_loop_else)
+        self.nextBlock(after_loop_else)
 
         if node.orelse:
             self.visit(node.orelse)
@@ -743,14 +743,14 @@ class CodeGenerator:
     def visitCompare(self, node):
         self.update_lineno(node)
         self.visit(node.left)
-        cleanup = self.newBlock()
+        cleanup = self.newBlock('cleanup')
         for op, code in zip(node.ops[:-1], node.comparators[:-1]):
             self.visit(code)
             self.emit('DUP_TOP')
             self.emit('ROT_THREE')
             self.emit('COMPARE_OP', self._cmp_opcode[type(op)])
             self.emit('JUMP_IF_FALSE_OR_POP', cleanup)
-            self.nextBlock()
+            self.nextBlock(label='compare_or_cleanup')
         # now do the last comparison
         if node.ops:
             op = node.ops[-1]
@@ -758,9 +758,9 @@ class CodeGenerator:
             self.visit(code)
             self.emit('COMPARE_OP', self._cmp_opcode[type(op)])
         if len(node.ops) > 1:
-            end = self.newBlock()
+            end = self.newBlock('end')
             self.emit('JUMP_FORWARD', end)
-            self.startBlock(cleanup)
+            self.nextBlock(cleanup)
             self.emit('ROT_TWO')
             self.emit('POP_TOP')
             self.nextBlock(end)
@@ -1032,11 +1032,11 @@ class CodeGenerator:
         self.visitTryExcept(node)
 
     def visitTryExcept(self, node):
-        body = self.newBlock()
-        handlers = self.newBlock()
-        end = self.newBlock()
+        body = self.newBlock('try_body')
+        handlers = self.newBlock('try_handlers')
+        end = self.newBlock('try_end')
         if node.orelse:
-            lElse = self.newBlock()
+            lElse = self.newBlock('try_else')
         else:
             lElse = end
 
@@ -1047,7 +1047,7 @@ class CodeGenerator:
         self.emit('POP_BLOCK')
         self.setups.pop()
         self.emit('JUMP_FORWARD', lElse)
-        self.startBlock(handlers)
+        self.nextBlock(handlers)
 
         last = len(node.handlers) - 1
         for i in range(len(node.handlers)):
@@ -1092,7 +1092,7 @@ class CodeGenerator:
             if expr:
                 self.nextBlock(next)
             else:
-                self.nextBlock()
+                self.nextBlock(label='handler_end')
         self.emit('END_FINALLY')
         if node.orelse:
             self.nextBlock(lElse)
