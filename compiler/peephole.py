@@ -53,6 +53,18 @@ SETUP_WITH = opmap["SETUP_WITH"]
 ABS_JUMPS = set(opcode.hasjabs)
 REL_JUMPS = set(opcode.hasjrel)
 
+CODEUNIT_SIZE = 2
+
+CONDITIONAL_JUMPS = (
+    POP_JUMP_IF_FALSE,
+    POP_JUMP_IF_TRUE,
+    JUMP_IF_FALSE_OR_POP,
+    JUMP_IF_TRUE_OR_POP,
+)
+
+
+UNCONDITIONAL_JUMPS = (JUMP_ABSOLUTE, JUMP_FORWARD)
+JUMPS_ON_TRUE = (POP_JUMP_IF_TRUE, JUMP_IF_TRUE_OR_POP)
 
 
 CMP_OP_IN = opcode.cmp_op.index('in')
@@ -170,11 +182,11 @@ BINARY_OPS = {
 
 
 def get_op(code, i):
-    return code[i * 2]
+    return code[i * CODEUNIT_SIZE]
 
 
 def get_arg(code, i):
-    index = i * 2 + 1
+    index = i * CODEUNIT_SIZE + 1
     oparg = code[index]
     if i >= 1 and get_op(code, i - 1) == EXTENDED_ARG:
         oparg |= code[index - 2] << 8
@@ -232,11 +244,11 @@ class Optimizer:
 
     def fill_nops(self, start, end):
         for i in range(start, end):
-            self.codestr[i * 2] = NOP
+            self.codestr[i * CODEUNIT_SIZE] = NOP
 
     def find_op(self, i=0):
-        for i in range(i, len(self.codestr) // 2):
-            if self.codestr[i * 2] != EXTENDED_ARG:
+        for i in range(i, len(self.codestr) // CODEUNIT_SIZE):
+            if self.codestr[i * CODEUNIT_SIZE] != EXTENDED_ARG:
                 break
         return i
 
@@ -249,19 +261,19 @@ class Optimizer:
             # lnotab is too complicated, bail
             return self.code
 
-        i = self.find_op()
-        num_operations = len(self.codestr) // 2
+        instr_index = self.find_op()
+        num_operations = len(self.codestr) // CODEUNIT_SIZE
 
-        while i < num_operations:
-            opcode = self.codestr[i * 2]
-            op_start = i
-            while op_start >= 1 and self.codestr[(op_start - 1) * 2] == EXTENDED_ARG:
+        while instr_index < num_operations:
+            opcode = self.codestr[instr_index * CODEUNIT_SIZE]
+            op_start = instr_index
+            while op_start >= 1 and self.codestr[(op_start - 1) * CODEUNIT_SIZE] == EXTENDED_ARG:
                 op_start -= 1
-            nexti = i + 1
-            while nexti < num_operations and self.codestr[nexti * 2] == EXTENDED_ARG:
+            nexti = instr_index + 1
+            while nexti < num_operations and self.codestr[nexti * CODEUNIT_SIZE] == EXTENDED_ARG:
                 nexti += 1
 
-            nextop = self.codestr[nexti * 2] if nexti < num_operations else 0
+            nextop = self.codestr[nexti * CODEUNIT_SIZE] if nexti < num_operations else 0
 
             if not self.in_consts:
                 del self.const_stack[:]
@@ -269,9 +281,9 @@ class Optimizer:
 
             handler = Optimizer.OP_HANDLERS.get(opcode)
             if handler is not None:
-                i = handler(self, i, opcode, op_start, nextop, nexti) or nexti
+                instr_index = handler(self, instr_index, opcode, op_start, nextop, nexti) or nexti
             else:
-                i = nexti
+                instr_index = nexti
 
         self.fix_blocks()
         lnotab = self.fix_lnotab()
@@ -284,139 +296,238 @@ class Optimizer:
     OP_HANDLERS, ophandler = ophandler_registry()
 
     @ophandler(UNARY_NOT)
-    def opt_unary_not(self, i, opcode, op_start, nextop, nexti):
+    def opt_unary_not(self, instr_index, opcode, op_start, nextop, nexti):
         # Replace UNARY_NOT POP_JUMP_IF_FALSE
         #   with    POP_JUMP_IF_TRUE
-        if nextop != POP_JUMP_IF_FALSE or not self.is_basic_block(op_start, i + 1):
+        if nextop != POP_JUMP_IF_FALSE or not self.is_basic_block(op_start, instr_index + 1):
             return
 
-        self.fill_nops(op_start, i + 1)
-        self.codestr[nexti * 2] = POP_JUMP_IF_TRUE
+        self.fill_nops(op_start, instr_index + 1)
+        self.codestr[nexti * CODEUNIT_SIZE] = POP_JUMP_IF_TRUE
 
     @ophandler(COMPARE_OP)
-    def opt_compare_op(self, i, opcode, op_start, nextop, nexti):
+    def opt_compare_op(self, instr_index, opcode, op_start, nextop, nexti):
         # not a is b -->  a is not b
         # not a in b -->  a not in b
         # not a is not b -->  a is b
         # not a not in b -->  a in b
-        j = get_arg(self.codestr, i)
+        cmp_type = get_arg(self.codestr, instr_index)
         if (
-            j < CMP_OP_IN
-            or j > CMP_OP_IS_NOT
+            cmp_type < CMP_OP_IN
+            or cmp_type > CMP_OP_IS_NOT
             or nextop != UNARY_NOT
-            or not self.is_basic_block(op_start, i + 1)
+            or not self.is_basic_block(op_start, instr_index + 1)
         ):
             return
 
-        self.codestr[i * 2 + 1] = j ^ 1
-        self.fill_nops(i + 1, nexti + 1)
+        self.codestr[instr_index * CODEUNIT_SIZE + 1] = cmp_type ^ 1
+        self.fill_nops(instr_index + 1, nexti + 1)
 
     @ophandler(LOAD_CONST)
-    def opt_load_const(self, i, opcode, op_start, nextop, nexti):
+    def opt_load_const(self, instr_index, opcode, op_start, nextop, nexti):
         # Skip over LOAD_CONST trueconst
         # POP_JUMP_IF_FALSE xx.  This improves
         # "while 1" performance.
         # The above comment is from CPython.  This optimization is now performed
         # at the AST level and is also applied to if statements.  But it does
         # not get applied to conditionals, e.g. 1 if 2 else 3
-        self.push_const(self.consts[get_arg(self.codestr, i)])
+        self.push_const(self.consts[get_arg(self.codestr, instr_index)])
         if (
             nextop != POP_JUMP_IF_FALSE
-            or not self.is_basic_block(op_start, i + 1)
-            or not bool(self.consts[get_arg(self.codestr, i)])
+            or not self.is_basic_block(op_start, instr_index + 1)
+            or not bool(self.consts[get_arg(self.codestr, instr_index)])
         ):
             return
         self.fill_nops(op_start, nexti + 1)
 
     @ophandler(RETURN_VALUE)
-    def opt_return_value(self, i, opcode, op_start, nextop, nexti):
-        h = i + 1
-        block_id = self.blocks[i]
-        while h < len(self.codestr) // 2 and self.blocks[h] == block_id:
-            h += 1
-        if h > i + 1:
-            self.fill_nops(i + 1, h)
-            nexti = self.find_op(h)
+    def opt_return_value(self, instr_index, opcode, op_start, nextop, nexti):
+        block_end = instr_index + 1
+        block_id = self.blocks[instr_index]
+        while block_end < len(self.codestr) // CODEUNIT_SIZE and self.blocks[block_end] == block_id:
+            block_end += 1
+        if block_end > instr_index + 1:
+            self.fill_nops(instr_index + 1, block_end)
+            nexti = self.find_op(block_end)
 
     @ophandler(*UNARY_OPS)
-    def op_unary_constants(self, i, opcode, op_start, nextop, nexti):
+    def op_unary_constants(self, instr_index, opcode, op_start, nextop, nexti):
         # Fold unary ops on constants.
         #  LOAD_CONST c1  UNARY_OP --> LOAD_CONST unary_op(c)
         if not self.const_stack:
             return
-        h = self.lastn_const_start(op_start, 1)
-        if self.is_basic_block(h, op_start):
-            h = self.fold_unaryops_on_constants(h, i + 1, opcode)
-            if h >= 0:
-                self.const_stack[-1] = self.consts[get_arg(self.codestr, i)]
+        unary_ops_start = self.lastn_const_start(op_start, 1)
+        if self.is_basic_block(unary_ops_start, op_start):
+            last_instr = self.fold_unaryops_on_constants(unary_ops_start, instr_index + 1, opcode)
+            if last_instr >= 0:
+                self.const_stack[-1] = self.consts[get_arg(self.codestr, instr_index)]
                 self.in_consts = True
 
     @ophandler(*BINARY_OPS)
-    def op_binary_constants(self, i, opcode, op_start, nextop, nexti):
+    def op_binary_constants(self, instr_index, opcode, op_start, nextop, nexti):
         if len(self.const_stack) < 2:
             return
-        h = self.lastn_const_start(op_start, 2)
-        if self.is_basic_block(h, op_start):
-            h = self.fold_binops_on_constants(h, i + 1, opcode)
-            if h >= 0:
+        bin_ops_start = self.lastn_const_start(op_start, 2)
+        if self.is_basic_block(bin_ops_start, op_start):
+            last_instr = self.fold_binops_on_constants(bin_ops_start, instr_index + 1, opcode)
+            if last_instr >= 0:
                 del self.const_stack[-1]
-                self.const_stack[-1] = self.consts[get_arg(self.codestr, i)]
+                self.const_stack[-1] = self.consts[get_arg(self.codestr, instr_index)]
                 self.in_consts = True
 
     @ophandler(BUILD_TUPLE, BUILD_LIST, BUILD_SET)
-    def op_fold_sequences(self, i, opcode, op_start, nextop, nexti):
-        j = get_arg(self.codestr, i)
-        if j > 0 and len(self.const_stack) >= j:
-            h = self.lastn_const_start(op_start, j)
-            if (opcode == BUILD_TUPLE and self.is_basic_block(h, op_start)) or (
+    def op_fold_sequences(self, instr_index, opcode, op_start, nextop, nexti):
+        coll_size = get_arg(self.codestr, instr_index)
+        if coll_size > 0 and len(self.const_stack) >= coll_size:
+            consts_instr_start = self.lastn_const_start(op_start, coll_size)
+            if (opcode == BUILD_TUPLE and self.is_basic_block(consts_instr_start, op_start)) or (
                 (opcode == BUILD_LIST or opcode == BUILD_SET)
                 and (
                     (
                         nextop == COMPARE_OP
                         and (
-                            self.codestr[nexti * 2 + 1] == PyCmp_IN
-                            or self.codestr[nexti * 2 + 1] == PyCmp_NOT_IN
+                            self.codestr[nexti * CODEUNIT_SIZE + 1] == PyCmp_IN
+                            or self.codestr[nexti * CODEUNIT_SIZE + 1] == PyCmp_NOT_IN
                         )
                     )
                     or nextop == GET_ITER
                 )
-                and self.is_basic_block(h, i + 1)
+                and self.is_basic_block(consts_instr_start, instr_index + 1)
             ):
-                h = self.fold_build_into_constant_tuple(h, i + 1, opcode, j)
-                if h >= 0:
-                    del self.const_stack[-j:]
-                    self.const_stack.append(self.consts[get_arg(self.codestr, h)])
+                last_instr = self.fold_build_into_constant_tuple(consts_instr_start, instr_index + 1, opcode, coll_size)
+                if last_instr >= 0:
+                    del self.const_stack[-coll_size:]
+                    self.const_stack.append(self.consts[get_arg(self.codestr, last_instr)])
                     self.in_consts = True
                 return
 
         if (
             nextop != UNPACK_SEQUENCE
-            or not self.is_basic_block(op_start, i + 1)
-            or j != get_arg(self.codestr, nexti)
+            or not self.is_basic_block(op_start, instr_index + 1)
+            or coll_size != get_arg(self.codestr, nexti)
             or opcode == BUILD_SET
         ):
             return
 
-        if j < 2:
+        if coll_size < 2:
             self.fill_nops(op_start, nexti + 1)
-        elif j == 2:
-            self.codestr[op_start * 2] = ROT_TWO
-            self.codestr[op_start * 2 + 1] = 0
+        elif coll_size == 2:
+            self.codestr[op_start * CODEUNIT_SIZE] = ROT_TWO
+            self.codestr[op_start * CODEUNIT_SIZE + 1] = 0
             self.fill_nops(op_start + 1, nexti + 1)
             del self.const_stack[:]
-        elif j == 3:
-            self.codestr[op_start * 2] = ROT_THREE
-            self.codestr[op_start * 2 + 1] = 0
-            self.codestr[(op_start + 1) * 2] = ROT_TWO
-            self.codestr[(op_start + 1) * 2 + 1] = 0
+        elif coll_size == 3:
+            self.codestr[op_start * CODEUNIT_SIZE] = ROT_THREE
+            self.codestr[op_start * CODEUNIT_SIZE + 1] = 0
+            self.codestr[(op_start + 1) * CODEUNIT_SIZE] = ROT_TWO
+            self.codestr[(op_start + 1) * CODEUNIT_SIZE + 1] = 0
             self.fill_nops(op_start + 2, nexti + 1)
             del self.const_stack[:]
 
-    def fold_build_into_constant_tuple(self, c_start, opcode_end, opcode, n):
+    @ophandler(JUMP_IF_FALSE_OR_POP, JUMP_IF_TRUE_OR_POP)
+    def op_fold_cond_jumps(self, instr_index, opcode, op_start, nextop, nexti):
+        """Simplify conditional jump to conditional jump where the
+        result of the first test implies the success of a similar
+        test or the failure of the opposite test.
+        Arises in code like:
+        "if a and b:"
+        "if a or b:"
+        "a and b or c"
+        "(a and b) and c"
+        x:JUMP_IF_FALSE_OR_POP y   y:JUMP_IF_FALSE_OR_POP z
+           -->  x:JUMP_IF_FALSE_OR_POP z
+        x:JUMP_IF_FALSE_OR_POP y   y:JUMP_IF_TRUE_OR_POP z
+           -->  x:POP_JUMP_IF_FALSE y+1
+        where y+1 is the instruction following the second test."""
+
+        jmp_target = get_arg(self.codestr, instr_index) // CODEUNIT_SIZE
+        tgt_start = self.find_op(jmp_target)
+        tgt_instr = self.codestr[tgt_start * CODEUNIT_SIZE]
+        if tgt_instr in CONDITIONAL_JUMPS:
+            # NOTE: all possible jumps here are absolute.
+            if (tgt_instr in JUMPS_ON_TRUE) == (opcode in JUMPS_ON_TRUE):
+                # The second jump will be taken iff the first is.
+                # The current opcode inherits its target's
+                # stack effect
+                new_end = self.set_arg(instr_index, get_arg(self.codestr, tgt_start))
+            else:
+                # The second jump is not taken if the first is (so
+                # jump past it), and all conditional jumps pop their
+                # argument when they're not taken (so change the
+                # first jump to pop its argument when it's taken).
+                new_end = self.set_arg(instr_index, (tgt_start + 1) * CODEUNIT_SIZE)
+                if opcode == JUMP_IF_TRUE_OR_POP:
+                    tgt_instr = POP_JUMP_IF_TRUE
+                else:
+                    tgt_instr = POP_JUMP_IF_FALSE
+            if new_end >= 0:
+                nexti = new_end
+                self.codestr[nexti * CODEUNIT_SIZE] = tgt_instr
+                return new_end
+        self.op_fold_jumps_to_uncond_jumps(instr_index, opcode, op_start, nextop, nexti)
+
+    @ophandler(
+        POP_JUMP_IF_FALSE,
+        POP_JUMP_IF_TRUE,
+        FOR_ITER,
+        JUMP_FORWARD,
+        JUMP_ABSOLUTE,
+        CONTINUE_LOOP,
+        SETUP_LOOP,
+        SETUP_EXCEPT,
+        SETUP_FINALLY,
+        SETUP_WITH,
+        SETUP_ASYNC_WITH,
+    )
+    def op_fold_jumps_to_uncond_jumps(self, instr_index, opcode, op_start, nextop, nexti):
+        jmp_target = self.get_jmp_target(instr_index)
+        tgt = self.find_op(jmp_target)
+        if opcode in UNCONDITIONAL_JUMPS and self.codestr[tgt * CODEUNIT_SIZE] == RETURN_VALUE:
+            self.codestr[op_start * CODEUNIT_SIZE] = RETURN_VALUE
+            self.codestr[op_start * CODEUNIT_SIZE + 1] = 0
+            self.fill_nops(op_start + 1, instr_index + 1)
+        elif self.codestr[tgt * CODEUNIT_SIZE] in UNCONDITIONAL_JUMPS:
+            jmp_target = self.get_jmp_target(tgt)
+            if opcode == JUMP_FORWARD:  # JMP_ABS can go backwards
+                opcode = JUMP_ABSOLUTE
+            elif opcode not in ABS_JUMPS:
+                if jmp_target < instr_index + 1:
+                    return  # No backward relative jumps
+                jmp_target -= instr_index + 1  # Calc relative jump addr
+            jmp_target *= 2
+            self.copy_op_arg(op_start, opcode, jmp_target, instr_index + 1)
+
+    def get_jmp_target(self, index):
+        code = self.codestr
+        opcode = get_op(code, index)
+        if opcode in ABS_JUMPS:
+            oparg = get_arg(code, index)
+            return oparg // CODEUNIT_SIZE
+        elif opcode in REL_JUMPS:
+            oparg = get_arg(code, index)
+            return oparg // CODEUNIT_SIZE + index + 1
+
+    def set_arg(self, instr_index, oparg):
+        """Given the index of the effective opcode, attempt to replace the
+        argument, taking into account EXTENDED_ARG.
+        Returns -1 on failure, or the new op index on success."""
+        curarg = get_arg(self.codestr, instr_index)
+        if curarg == oparg:
+            return instr_index
+        curilen = instrsize(curarg)
+        newilen = instrsize(oparg)
+        if curilen < newilen:
+            return -1
+
+        self.write_op_arg(instr_index + 1 - curilen, self.codestr[instr_index * CODEUNIT_SIZE], oparg, newilen)
+        self.fill_nops(instr_index + 1 - curilen + newilen, instr_index + 1)
+        return instr_index - curilen + newilen
+
+    def fold_build_into_constant_tuple(self, c_start, opcode_end, opcode, const_count):
         if opcode == BUILD_SET:
-            newconst = frozenset(self.const_stack[-n:])
+            newconst = frozenset(self.const_stack[-const_count:])
         else:
-            newconst = tuple(self.const_stack[-n:])
+            newconst = tuple(self.const_stack[-const_count:])
 
         self.consts.append(newconst)
         return self.copy_op_arg(c_start, LOAD_CONST, len(self.consts) - 1, opcode_end)
@@ -456,18 +567,18 @@ class Optimizer:
         self.fill_nops(i, maxi - ilen)
         return maxi - 1
 
-    def lastn_const_start(self, i, n):
+    def lastn_const_start(self, instr_index, n):
         assert n > 0
         while True:
-            i -= 1
-            assert i >= 0
-            opcode = self.codestr[i * 2]
+            instr_index -= 1
+            assert instr_index >= 0
+            opcode = self.codestr[instr_index * CODEUNIT_SIZE]
             if opcode == LOAD_CONST:
                 n -= 1
                 if not n:
-                    while i > 0 and self.codestr[i * 2 - 2] == EXTENDED_ARG:
-                        i -= 1
-                    return i
+                    while instr_index > 0 and self.codestr[instr_index * CODEUNIT_SIZE - 2] == EXTENDED_ARG:
+                        instr_index -= 1
+                    return instr_index
             else:
                 assert opcode == NOP or opcode == EXTENDED_ARG
 
@@ -491,7 +602,7 @@ class Optimizer:
         )
 
     def markblocks(self):
-        num_operations = len(self.codestr) // 2
+        num_operations = len(self.codestr) // CODEUNIT_SIZE
         blocks = [0] * num_operations
         code = self.codestr
 
@@ -499,10 +610,10 @@ class Optimizer:
             opcode = get_op(code, i)
             if opcode in ABS_JUMPS:
                 oparg = get_arg(code, i)
-                blocks[oparg // 2] = 1
+                blocks[oparg // CODEUNIT_SIZE] = 1
             elif opcode in REL_JUMPS:
                 oparg = get_arg(code, i)
-                blocks[oparg // 2 + i + 1] = 1
+                blocks[oparg // CODEUNIT_SIZE + i + 1] = 1
 
         blockcnt = 0
         for block in range(num_operations):
@@ -513,7 +624,7 @@ class Optimizer:
 
     def write_op_arg(self, i, opcode, oparg, size):
         codestr = self.codestr
-        ofs = i * 2
+        ofs = i * CODEUNIT_SIZE
         if size == 4:
             codestr[ofs] = EXTENDED_ARG
             codestr[ofs + 1] = (oparg >> 24) & 0xFF
@@ -534,10 +645,10 @@ class Optimizer:
         """updates self.blocks to contain the the new instruction offset for
         each corresponding old instruction"""
         nops = 0
-        for i in range(len(self.codestr) // 2):
+        for i in range(len(self.codestr) // CODEUNIT_SIZE):
             # original code offset => new code offset
             self.blocks[i] = i - nops
-            if self.codestr[i * 2] == NOP:
+            if self.codestr[i * CODEUNIT_SIZE] == NOP:
                 nops += 1
 
     def fix_lnotab(self):
@@ -548,63 +659,44 @@ class Optimizer:
         for i in range(0, tabsiz, 2):
             cum_orig_offset += lnotab[i]
             assert cum_orig_offset % 2 == 0
-            new_offset = self.blocks[cum_orig_offset // 2] * 2
+            new_offset = self.blocks[cum_orig_offset // CODEUNIT_SIZE] * CODEUNIT_SIZE
             offset_delta = new_offset - last_offset
             assert offset_delta <= 255
             lnotab[i] = cast_signed_byte_to_unsigned(offset_delta)
             last_offset = new_offset
         return lnotab
 
-    def write_op_arg(self, i, opcode, oparg, size):
-        codestr = self.codestr
-        ofs = i * 2
-        if size == 4:
-            codestr[ofs] = EXTENDED_ARG
-            codestr[ofs + 1] = (oparg >> 24) & 0xFF
-            ofs += 2
-        if size >= 3:
-            codestr[ofs] = EXTENDED_ARG
-            codestr[ofs + 1] = (oparg >> 16) & 0xFF
-            ofs += 2
-        if size >= 2:
-            codestr[ofs] = EXTENDED_ARG
-            codestr[ofs + 1] = (oparg >> 8) & 0xFF
-            ofs += 2
-
-        codestr[ofs] = opcode
-        codestr[ofs + 1] = oparg & 0xFF
-
     def fix_jumps(self):
-        op_start = i = h = 0
+        op_start = i = last_instr_index = 0
         codestr = self.codestr
         blocks = self.blocks
-        while i < len(codestr) // 2:
-            j = codestr[i * 2 + 1]
-            while codestr[i * 2] == EXTENDED_ARG:
+        while i < len(codestr) // CODEUNIT_SIZE:
+            oparg = codestr[i * CODEUNIT_SIZE + 1]
+            while codestr[i * CODEUNIT_SIZE] == EXTENDED_ARG:
                 i += 1
-                j = j << 8 | codestr[i * 2 + 1]
-            opcode = codestr[i * 2]
+                oparg = oparg << 8 | codestr[i * CODEUNIT_SIZE + 1]
+            opcode = codestr[i * CODEUNIT_SIZE]
 
             if opcode == NOP:
                 i += 1
                 op_start = i
                 continue
             if opcode in ABS_JUMPS:
-                j = blocks[j // 2] * 2
+                oparg = blocks[oparg // CODEUNIT_SIZE] * CODEUNIT_SIZE
             elif opcode in REL_JUMPS:
-                j = blocks[j // 2 + i + 1] - blocks[i] - 1
-                j *= 2
+                oparg = blocks[oparg // CODEUNIT_SIZE + i + 1] - blocks[i] - 1
+                oparg *= 2
             nexti = i - op_start + 1
 
-            if instrsize(j) > nexti:
+            if instrsize(oparg) > nexti:
                 return None
 
             # If instrsize(j) < nexti, we'll emit EXTENDED_ARG 0
-            self.write_op_arg(h, opcode, j, nexti)
+            self.write_op_arg(last_instr_index, opcode, oparg, nexti)
 
-            h += nexti
+            last_instr_index += nexti
             i += 1
             op_start = i
 
-        del codestr[h * 2 :]
+        del codestr[last_instr_index * CODEUNIT_SIZE :]
         return codestr
