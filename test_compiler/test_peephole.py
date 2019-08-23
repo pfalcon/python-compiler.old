@@ -119,6 +119,37 @@ class PeepHoleTests(CompilerTest):
             code = self.peephole_compile(line)
             code.assert_both("UNARY_NEGATIVE")
 
+    def test_global_as_constant(self):
+        # LOAD_GLOBAL None/True/False  -->  LOAD_CONST None/True/False
+        source = """
+        def f():
+            x = None
+            x = None
+            return x
+        def g():
+            x = True
+            return x
+        def h():
+            x = False
+            return x"""
+
+        d = self.peephole_run(source)
+        f, g, h = d["f"], d["g"], d["h"]
+
+        for func, elem in ((f, None), (g, True), (h, False)):
+            func.assert_neither("LOAD_GLOBAL")
+            func.assert_both("LOAD_CONST", elem)
+
+        source = """
+        def f():
+            'Adding a docstring made this test fail in Py2.5.0'
+            return None
+        """
+        f = self.peephole_run(source, "f")
+
+        f.assert_neither("LOAD_GLOBAL")
+        f.assert_both("LOAD_CONST", None)
+
     def test_while_one(self):
         # Skip over:  LOAD_CONST trueconst  POP_JUMP_IF_FALSE xx
         source = """
