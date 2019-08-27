@@ -130,7 +130,7 @@ class Scope:
             return SC_FREE
         if name in self.defs:
             return SC_LOCAL
-        if self.nested and (name in self.frees or name in self.uses):
+        if self.nested and name in self.uses:
             return SC_FREE
         if self.nested:
             return SC_UNKNOWN
@@ -139,10 +139,13 @@ class Scope:
 
     def get_free_vars(self):
         if not self.nested:
-            assert len(self.frees) <= 1
-            if self.frees:
-                assert "__class__" in self.frees
-            return sorted(self.frees)
+            # If we're not nested we can't possibly have any free variables,
+            # as we can't close over class variables.  The exception to this
+            # rule is __class__, which we indeed can close over.
+            if '__class__' in self.frees:
+                return ['__class__']
+            return []
+
         free = {}
         free.update(self.frees)
         for name in self.uses.keys():
@@ -154,11 +157,17 @@ class Scope:
         for child in self.children:
             if child.name in self.explicit_globals:
                 child.global_scope = True
+            if child.nested:
+                frees = child.get_free_vars()
 
-            frees = child.get_free_vars()
-            globals = self.add_frees(frees)
-            for name in globals:
-                child.force_global(name)
+                globals = self.add_frees(frees)
+                for name in globals:
+                    child.force_global(name)
+            elif '__class__' in child.frees:
+                self.add_frees(['__class__'])
+            elif '__class__' in child.uses and '__class__' not in child.defs:
+                child.frees = {'__class__'}
+                self.add_frees(['__class__'])
 
     def force_global(self, name):
         """Force name to be global in scope.
@@ -191,7 +200,7 @@ class Scope:
         for name in names:
             sc = self.check_name(name)
             if self.nested:
-                if name == "__class__" and isinstance(self, ClassScope):
+                if name == "__class__":
                     self.cells[name] = 1
                 elif sc == SC_UNKNOWN or sc == SC_FREE \
                    or isinstance(self, ClassScope):
@@ -206,7 +215,11 @@ class Scope:
                 if name == "__class__":
                     if isinstance(self, ClassScope):
                         self.cells[name] = 1
-                elif sc == SC_LOCAL:
+                        continue
+                    elif self.findParentClass() is not None:
+                        self.frees[name] = 1
+                        continue
+                if sc == SC_LOCAL:
                     self.cells[name] = 1
                 elif sc != SC_CELL:
                     child_globals.append(name)
@@ -214,6 +227,15 @@ class Scope:
 
     def get_cell_vars(self):
         return sorted(self.cells.keys())
+
+    def findParentClass(self):
+        parent = self.parent
+        while not isinstance(parent, ClassScope):
+            if parent is None:
+                break
+            parent = parent.parent
+        return parent
+
 
 class ModuleScope(Scope):
     __super_init = Scope.__init__
@@ -444,31 +466,14 @@ class SymbolVisitor:
         else:
             scope.add_use(node.id)
 
-            if node.id == "__class__" and isinstance(scope, ClassScope):
-                # The idea is that in class body, __class__ is still bound to
-                # the outer containing class (if any). Otherwise, this class'
-                # __class__ is bound in methods of this class, but not class
-                # body itself (__class__ is created as result of class body
-                # evaluations).
-                parent = scope.parent
-                while not isinstance(parent, ClassScope):
-                    parent.frees["__class__"] = 1
-                    parent = parent.parent
-                parent.cells["__class__"] = 1
-                scope.frees["__class__"] = 1
-
-            if node.id == "super" and isinstance(scope, FunctionScope) \
-               and isinstance(scope.parent, ClassScope):
+            if node.id == "super" and isinstance(scope, FunctionScope):
                 # If super() is used, and special cell var __class__ to class
                 # definition, and free var to the method. This is complicated
                 # by the fact that original Python2 implementation supports
                 # free->cell var relationship only if free var is defined in
                 # a scope marked as "nested", which normal method in a class
                 # isn't.
-                # TODO: Check that super() takes no args.
-                scope.parent.add_def("__class__")
                 scope.add_use("__class__")
-                scope.frees["__class__"] = 1
 
     # operations that bind new names
 
@@ -502,15 +507,8 @@ class SymbolVisitor:
     def visitNonlocal(self, node, scope):
         # TODO: Check that var exists in outer scope
         for name in node.names:
-            scope.add_free(name)
+            scope.frees[name] = 1
             scope.nonlocals[name] = 1
-
-            if name == "__class__":
-                if isinstance(scope, FunctionScope) and isinstance(scope.parent, ClassScope):
-                    # TODO: Reconcile with handling for super() in visitName().
-                    scope.parent.cells["__class__"] = 1
-                    scope.frees["__class__"] = 1
-
 
     def visitAssign(self, node, scope):
         """Propagate assignment flag down to child nodes.
