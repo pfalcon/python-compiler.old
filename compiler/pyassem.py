@@ -290,7 +290,7 @@ DONE = "DONE"
 class PyFlowGraph(FlowGraph):
     super_init = FlowGraph.__init__
 
-    def __init__(self, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None, peephole = False):
+    def __init__(self, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None, peephole_enabled = False):
         self.super_init()
         self.name = name
         self.filename = filename
@@ -299,7 +299,7 @@ class PyFlowGraph(FlowGraph):
         self.kwonlyargs = kwonlyargs
         self.starargs = starargs
         self.klass = klass
-        self.peephole = peephole
+        self.peephole_enabled = peephole_enabled
         if optimized:
             self.flags = CO_OPTIMIZED | CO_NEWLOCALS
         else:
@@ -643,7 +643,7 @@ class PyFlowGraph(FlowGraph):
         consts = self.getConsts()
         code = self.lnotab.getCode()
         lnotab = self.lnotab.getTable()
-        if self.peephole:
+        if self.peephole_enabled:
             opt = Optimizer(code, consts, lnotab).optimize()
             if opt is not None:
                 code, consts, lnotab = opt.byte_code, opt.consts, opt.lnotab

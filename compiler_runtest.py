@@ -28,7 +28,7 @@ if len(sys.argv) < 2:
     print('no filename provided')
     sys.exit(1)
 
-peephole = False
+peephole = True
 if sys.argv[1] == '--peephole':
    peephole = True
    del sys.argv[1]

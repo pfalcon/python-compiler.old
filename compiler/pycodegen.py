@@ -94,7 +94,7 @@ class Expression(AbstractCompileMode):
 
     def compile(self):
         tree = self._get_tree()
-        gen = ExpressionCodeGenerator(tree)
+        gen = ExpressionCodeGenerator(tree, peephole_enabled=True)
         self.code = gen.getCode()
 
 class Interactive(AbstractCompileMode):
@@ -103,7 +103,7 @@ class Interactive(AbstractCompileMode):
 
     def compile(self):
         tree = self._get_tree()
-        gen = InteractiveCodeGenerator(tree)
+        gen = InteractiveCodeGenerator(tree, peephole_enabled=True)
         self.code = gen.getCode()
 
 class Module(AbstractCompileMode):
@@ -112,7 +112,7 @@ class Module(AbstractCompileMode):
 
     def compile(self, display=0):
         tree = self._get_tree()
-        gen = ModuleCodeGenerator(tree)
+        gen = ModuleCodeGenerator(tree, peephole_enabled=True)
         if display:
             import pprint
             pprint.pprint(tree)
@@ -441,7 +441,7 @@ class CodeGenerator:
             ndecorators = 0
         flags = 0
         gen = self.FunctionGen(node, self.scopes, isLambda,
-                               self.class_name, self.get_module(), peephole=self.graph.peephole)
+                               self.class_name, self.get_module(), peephole_enabled=self.graph.peephole_enabled)
         body = node.body
         if not isLambda:
             body = self.skip_docstring(body)
@@ -504,7 +504,7 @@ class CodeGenerator:
             self.visit(decorator)
 
         gen = self.ClassGen(node, self.scopes,
-                            self.get_module(), self.graph.peephole)
+                            self.get_module(), self.graph.peephole_enabled)
         walk(self.skip_docstring(node.body), gen)
         gen.finish()
 
@@ -815,7 +815,7 @@ class CodeGenerator:
         node.body = []
         self.update_lineno(node)
         gen = GenExprCodeGenerator(node, self.scopes, self.class_name,
-                                   self.get_module(), name, self.graph.peephole)
+                                   self.get_module(), name, self.graph.peephole_enabled)
         walker = ASTVisitor(gen)
         if isinstance(node, ast.ListComp):
             gen.emit('BUILD_LIST')
@@ -1875,9 +1875,9 @@ class ModuleCodeGenerator(NestedScopeMixin, CodeGenerator):
 
     scopes = None
 
-    def __init__(self, tree, peephole = False):
+    def __init__(self, tree, peephole_enabled):
         self.filename = tree.filename
-        self.graph = pyassem.PyFlowGraph("<module>", tree.filename, peephole=peephole)
+        self.graph = pyassem.PyFlowGraph("<module>", tree.filename, peephole_enabled=peephole_enabled)
         self.futures = future.find_futures(tree)
         self.__super_init()
         walk(tree, self)
@@ -1924,7 +1924,7 @@ class InteractiveCodeGenerator(NestedScopeMixin, CodeGenerator):
 class AbstractFunctionCode:
     optimized = 1
 
-    def __init__(self, func, scopes, isLambda, class_name, mod, name, peephole=False):
+    def __init__(self, func, scopes, isLambda, class_name, mod, name, peephole_enabled=False):
         self.class_name = class_name
         self.module = mod
 
@@ -1945,7 +1945,7 @@ class AbstractFunctionCode:
             name, filename,
             args=args, kwonlyargs=kwonlyargs, starargs=starargs,
             optimized=1,
-            peephole=peephole
+            peephole_enabled=peephole_enabled
         )
         self.isLambda = isLambda
         self.super_init()
@@ -1992,14 +1992,14 @@ class FunctionCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
 
     __super_init = AbstractFunctionCode.__init__
 
-    def __init__(self, func, scopes, isLambda, class_name, mod, peephole=False):
+    def __init__(self, func, scopes, isLambda, class_name, mod, peephole_enabled=False):
         self.scopes = scopes
         self.scope = scopes[func]
         if isLambda:
             name = "<lambda>"
         else:
             name = func.name
-        self.__super_init(func, scopes, isLambda, class_name, mod, name, peephole=peephole)
+        self.__super_init(func, scopes, isLambda, class_name, mod, name, peephole_enabled=peephole_enabled)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
         if self.scope.generator is not None:
@@ -2012,24 +2012,24 @@ class GenExprCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
 
     __super_init = AbstractFunctionCode.__init__
 
-    def __init__(self, gexp, scopes, class_name, mod, name, peephole=False):
+    def __init__(self, gexp, scopes, class_name, mod, name, peephole_enabled=False):
         self.scopes = scopes
         self.scope = scopes[gexp]
-        self.__super_init(gexp, scopes, False, class_name, mod, name, peephole=peephole)
+        self.__super_init(gexp, scopes, False, class_name, mod, name, peephole_enabled=peephole_enabled)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
         self.graph.setFlag(CO_GENERATOR)
 
 class AbstractClassCode:
 
-    def __init__(self, klass, scopes, module, peephole=False):
+    def __init__(self, klass, scopes, module, peephole_enabled=False):
         self.tree = klass
         self.class_name = klass.name
         self.module = module
         self.name = klass.name
         filename = module.filename
         self.graph = pyassem.PyFlowGraph(klass.name, filename,
-                                           optimized=0, klass=1, peephole=peephole)
+                                           optimized=0, klass=1, peephole_enabled=peephole_enabled)
         self.super_init()
         self.graph.setFlag(CO_NEWLOCALS)
         doc = self.get_docstring(klass)
@@ -2057,10 +2057,10 @@ class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
 
     __super_init = AbstractClassCode.__init__
 
-    def __init__(self, klass, scopes, module, peephole=False):
+    def __init__(self, klass, scopes, module, peephole_enabled=False):
         self.scopes = scopes
         self.scope = scopes[klass]
-        self.__super_init(klass, scopes, module, peephole)
+        self.__super_init(klass, scopes, module, peephole_enabled)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
         self.emit("LOAD_NAME", "__name__")

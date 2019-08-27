@@ -17,22 +17,22 @@ def glob_test(dir, pattern, adder):
 
 
 class CompilerTest(BytecodeTestCase):
-    def compile(self, code, peephole=True):
+    def compile(self, code, peephole_enabled=True):
         code = inspect.cleandoc("\n" + code)
         tree = ast.parse(code)
         tree.filename = ""
-        gen = compiler.pycodegen.ModuleCodeGenerator(tree, peephole)
+        gen = compiler.pycodegen.ModuleCodeGenerator(tree, peephole_enabled)
         return gen.getCode()
 
-    def run_code(self, code, peephole=True):
-        compiled = self.compile(code, peephole)
+    def run_code(self, code, peephole_enabled=True):
+        compiled = self.compile(code, peephole_enabled)
         d = {}
         exec(compiled, d)
         return d
 
-    def to_graph(self, code):
+    def to_graph(self, code, peephole_enabled=True):
         code = inspect.cleandoc("\n" + code)
         tree = ast.parse(code)
         tree.filename = ""
-        gen = compiler.pycodegen.ModuleCodeGenerator(tree, True)
+        gen = compiler.pycodegen.ModuleCodeGenerator(tree, peephole_enabled)
         return gen.graph
