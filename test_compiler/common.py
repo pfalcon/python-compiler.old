@@ -8,6 +8,17 @@ from os import path
 from subprocess import run, PIPE
 
 
+def get_repo_root():
+    dirname = path.dirname(__file__)
+    completed_process = run(
+        ["git", "rev-parse", "--show-toplevel"], cwd=dirname, stdout=PIPE, stderr=PIPE
+    )
+    if completed_process.returncode:
+        print("Error occurred", file=sys.stderr)
+        sys.exit(1)
+    return completed_process.stdout.strip().decode("utf8")
+
+
 def glob_test(dir, pattern, adder):
     base_path = path.dirname(__file__)
     target_dir = path.join(base_path, dir)

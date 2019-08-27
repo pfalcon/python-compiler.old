@@ -9,53 +9,82 @@
 #
 from __future__ import print_function
 import re
+import sys
 import dis as _dis
+from types import CodeType
 
 
-id_map = {}
-id_cnt = 0
+class Disassembler:
+    def __init__(self):
+        self.id_map = {}
+        self.id_cnt = 0
 
+    def get_co_id(self, co):
+        addr = id(co)
+        if addr in self.id_map:
+            return self.id_map[addr]
+        self.id_map[addr] = self.id_cnt
+        self.id_cnt += 1
+        return self.id_cnt - 1
 
-def get_co_id(co):
-    global id_cnt
-    addr = id(co)
-    if addr in id_map:
-        return id_map[addr]
-    id_map[addr] = id_cnt
-    id_cnt += 1
-    return id_cnt - 1
+    def co_repr(self, co):
+        return '<code object %s at #%d, file "%s", line %d>' % (
+            co.co_name,
+            self.get_co_id(co),
+            co.co_filename,
+            co.co_firstlineno,
+        )
 
+    def disassemble(self, co, lasti=-1, file=None):
+        """Disassemble a code object."""
+        consts = tuple([self.co_repr(x) if hasattr(x, "co_code") else x for x in co.co_consts])
+        _dis.disassemble(
+            CodeType(
+                co.co_argcount,
+                co.co_kwonlyargcount,
+                co.co_nlocals,
+                co.co_stacksize,
+                co.co_flags,
+                co.co_code,
+                consts,
+                co.co_names,
+                co.co_varnames,
+                co.co_filename,
+                co.co_name,
+                co.co_firstlineno,
+                co.co_lnotab,
+                co.co_freevars,
+                co.co_cellvars
+            ),
+            file=file
+        )
 
-def co_repr(co):
-    return '<code object %s at #%d, file "%s", line %d>' % (co.co_name, get_co_id(co), co.co_filename, co.co_firstlineno)
-
-
-def disassemble(co, lasti=-1, file=None):
-    """Disassemble a code object."""
-    cell_names = co.co_cellvars + co.co_freevars
-    linestarts = dict(_dis.findlinestarts(co))
-    consts = [co_repr(x) if hasattr(x, "co_code") else x for x in co.co_consts]
-    _dis._disassemble_bytes(co.co_code, lasti, co.co_varnames, co.co_names,
-                       consts, cell_names, linestarts, file=file)
-
-def dis(co):
-    print(co_repr(co))
-    disassemble(co)
-    print("co_argcount:", co.co_argcount)
-    print("co_kwonlyargcount:", co.co_kwonlyargcount)
-    print("co_stacksize:", co.co_stacksize)
-#    print("co_flags:", hex(co.co_flags))
-    print("co_consts:", tuple([co_repr(x) if hasattr(x, "co_code") else x for x in co.co_consts]))
-    print("co_firstlineno:", co.co_firstlineno)
-    print("co_names:", co.co_names)
-    print("co_varnames:", co.co_varnames)
-    print("co_cellvars:", co.co_cellvars)
-    print("co_freevars:", co.co_freevars)
-    print("co_lnotab:", co.co_lnotab)
-    print()
-    for c in co.co_consts:
-        if hasattr(c, "co_code"):
-            dis(c)
+    def dump_code(self, co, file):
+        if not file:
+            file = sys.stdout
+        print(self.co_repr(co), file=file)
+        self.disassemble(co, file=file)
+        print("co_argcount:", co.co_argcount, file=file)
+        print("co_kwonlyargcount:", co.co_kwonlyargcount, file=file)
+        print("co_stacksize:", co.co_stacksize, file=file)
+        #    print("co_flags:", hex(co.co_flags), file=file)
+        print(
+            "co_consts:",
+            tuple(
+                [self.co_repr(x) if hasattr(x, "co_code") else x for x in co.co_consts]
+            ),
+            file=file,
+        )
+        print("co_firstlineno:", co.co_firstlineno, file=file)
+        print("co_names:", co.co_names, file=file)
+        print("co_varnames:", co.co_varnames, file=file)
+        print("co_cellvars:", co.co_cellvars, file=file)
+        print("co_freevars:", co.co_freevars, file=file)
+        print("co_lnotab:", co.co_lnotab, file=file)
+        print(file=file)
+        for c in co.co_consts:
+            if hasattr(c, "co_code"):
+                self.dump_code(c, file)
 
 
 # https://www.python.org/dev/peps/pep-0263/
@@ -78,4 +107,4 @@ if __name__ == "__main__":
     import sys
     with open_with_coding(sys.argv[1]) as f:
         co = compile(f.read(), sys.argv[1], "exec")
-    dis(co)
+    Disassembler().dump_code(co, file=sys.stdout)
