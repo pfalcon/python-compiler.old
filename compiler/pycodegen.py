@@ -12,7 +12,8 @@ from compiler.consts import SC_LOCAL, SC_GLOBAL_IMPLICIT, SC_GLOBAL_EXPLICIT, \
      SC_FREE, SC_CELL
 from compiler.consts import (CO_VARARGS, CO_VARKEYWORDS, CO_NEWLOCALS,
      CO_NESTED, CO_GENERATOR, CO_FUTURE_DIVISION,
-     CO_FUTURE_ABSIMPORT, CO_FUTURE_WITH_STATEMENT, CO_FUTURE_PRINT_FUNCTION)
+     CO_FUTURE_ABSIMPORT, CO_FUTURE_WITH_STATEMENT, CO_FUTURE_PRINT_FUNCTION,
+     CO_COROUTINE, CO_ASYNC_GENERATOR, CO_FUTURE_BARRY_AS_BDFL, CO_FUTURE_GENERATOR_STOP)
 from .visitor import ASTVisitor
 
 from . import config
@@ -223,15 +224,10 @@ class CodeGenerator:
         # XXX set flags based on future features
         futures = self.get_module().futures
         for feature in futures:
-            if feature == "division":
-                self.graph.setFlag(CO_FUTURE_DIVISION)
-                self._div_op = "BINARY_TRUE_DIVIDE"
-            elif feature == "absolute_import":
-                self.graph.setFlag(CO_FUTURE_ABSIMPORT)
-            elif feature == "with_statement":
-                self.graph.setFlag(CO_FUTURE_WITH_STATEMENT)
-            elif feature == "print_function":
-                self.graph.setFlag(CO_FUTURE_PRINT_FUNCTION)
+            if feature == "generator_stop":
+                self.graph.setFlag(CO_FUTURE_GENERATOR_STOP)
+            elif feature == "barry_as_FLUFL":
+                self.graph.setFlag(CO_FUTURE_BARRY_AS_BDFL)
 
     def initClass(self):
         """This method is called once for each class"""
@@ -1959,6 +1955,15 @@ class AbstractFunctionCode:
             self.graph.setFlag(CO_VARARGS)
         if func.args.kwarg:
             self.graph.setFlag(CO_VARKEYWORDS)
+        if self.scope.nested:
+            self.graph.setFlag(CO_NESTED)
+        if self.scope.generator and not self.scope.coroutine:
+            self.graph.setFlag(CO_GENERATOR)
+        if not self.scope.generator and self.scope.coroutine:
+            self.graph.setFlag(CO_COROUTINE)
+        if self.scope.generator and self.scope.coroutine:
+            self.graph.setFlag(CO_ASYNC_GENERATOR)
+
         self.graph.firstline = func.lineno
 
     def get_module(self):
@@ -2002,8 +2007,6 @@ class FunctionCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
         self.__super_init(func, scopes, isLambda, class_name, mod, name, peephole_enabled=peephole_enabled)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
-        if self.scope.generator is not None:
-            self.graph.setFlag(CO_GENERATOR)
 
 class GenExprCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
                            CodeGenerator):
@@ -2018,7 +2021,7 @@ class GenExprCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
         self.__super_init(gexp, scopes, False, class_name, mod, name, peephole_enabled=peephole_enabled)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
-        self.graph.setFlag(CO_GENERATOR)
+
 
 class AbstractClassCode:
 
@@ -2031,7 +2034,6 @@ class AbstractClassCode:
         self.graph = pyassem.PyFlowGraph(klass.name, filename,
                                            optimized=0, klass=1, peephole_enabled=peephole_enabled)
         self.super_init()
-        self.graph.setFlag(CO_NEWLOCALS)
         doc = self.get_docstring(klass)
         if doc is not None:
             self.setDocstring(doc)

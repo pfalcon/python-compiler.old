@@ -41,6 +41,14 @@ class CompilerTest(BytecodeTestCase):
         exec(compiled, d)
         return d
 
+    def find_code(self, code):
+        consts = [const for const in code.co_consts if isinstance(const, CodeType)]
+        if len(consts) == 0:
+            self.assertFail("No const available")
+        elif len(consts) != 1:
+            self.assertFail("Too many consts")
+        return consts[0]
+
     def to_graph(self, code, peephole_enabled=True):
         code = inspect.cleandoc("\n" + code)
         tree = ast.parse(code)

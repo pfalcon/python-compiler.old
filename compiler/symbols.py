@@ -40,7 +40,7 @@ class Scope:
         # but explicitly mark it as global. Bytecode-wise, this is handled
         # automagically, but we need to generate proper __qualname__ for these.
         self.global_scope = False
-        self.generator = None
+        self.generator = False
         self.klass = None
         if klass is not None:
             for i in range(len(klass)):
@@ -329,6 +329,9 @@ class SymbolVisitor:
             self.module, self.klass, name=self._scope_names[type(node)],
             lineno=node.lineno
         )
+        if isinstance(node, ast.GeneratorExp):
+            scope.generator = True
+
         if parent.nested or isinstance(parent, FunctionScope) \
                 or isinstance(parent, GenExprScope):
             scope.nested = 1
@@ -583,7 +586,12 @@ class SymbolVisitor:
     # a yield statement signals a generator
 
     def visitYield(self, node, scope):
-        scope.generator = 1
+        scope.generator = True
+        if node.value:
+            self.visit(node.value, scope)
+
+    def visitYieldFrom(self, node, scope):
+        scope.generator = True
         if node.value:
             self.visit(node.value, scope)
 

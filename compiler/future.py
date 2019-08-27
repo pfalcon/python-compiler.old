@@ -19,7 +19,7 @@ class FutureParser:
 
     features = ("nested_scopes", "generators", "division",
                 "absolute_import", "with_statement", "print_function",
-                "unicode_literals", "generator_stop")
+                "unicode_literals", "generator_stop", "barry_as_FLUFL")
 
     def __init__(self):
         self.found = {} # set
@@ -37,6 +37,8 @@ class FutureParser:
                 name = alias.name
                 if name in self.features:
                     self.found[name] = 1
+                elif name == "braces":
+                    raise SyntaxError("not a chance")
                 else:
                     raise SyntaxError(
                           "future feature %s is not defined" % name)
