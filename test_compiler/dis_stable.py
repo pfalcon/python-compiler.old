@@ -67,7 +67,15 @@ class Disassembler:
         print("co_argcount:", co.co_argcount, file=file)
         print("co_kwonlyargcount:", co.co_kwonlyargcount, file=file)
         print("co_stacksize:", co.co_stacksize, file=file)
-        #    print("co_flags:", hex(co.co_flags), file=file)
+        flags = []
+        co_flags = co.co_flags
+        for val, name in _dis.COMPILER_FLAG_NAMES.items():
+            if co_flags & val:
+                flags.append(name)
+                co_flags &= ~val
+        if co_flags:
+            flags.append(hex(co_flags))
+        print("co_flags:", hex(co.co_flags), "(" + " | ".join(flags) + ")", file=file)
         print(
             "co_consts:",
             tuple(
@@ -85,6 +93,7 @@ class Disassembler:
         for c in co.co_consts:
             if hasattr(c, "co_code"):
                 self.dump_code(c, file)
+
 
 
 # https://www.python.org/dev/peps/pep-0263/
