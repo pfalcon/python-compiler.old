@@ -19,18 +19,11 @@ class Set:
         c.elts.update(self.elts)
         return c
 
-class Stack:
-    def __init__(self):
-        self.stack = []
-        self.pop = self.stack.pop
-    def __len__(self):
-        return len(self.stack)
+class Stack(list):
     def push(self, elt):
-        self.stack.append(elt)
+        self.append(elt)
     def top(self):
-        return self.stack[-1]
-    def __getitem__(self, index): # needed by visitContinue()
-        return self.stack[index]
+        return self[-1]
 
 MANGLE_LEN = 256 # magic constant from compile.c
 
