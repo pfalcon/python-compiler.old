@@ -229,13 +229,20 @@ def ophandler_registry():
     return registry, register
 
 
+class OptimizedCode:
+    def __init__(self, byte_code, consts, lnotab):
+        self.byte_code = byte_code
+        self.consts = consts
+        self.lnotab = lnotab
+
+
 class Optimizer:
-    def __init__(self, code: CodeType) -> None:
-        assert len(code.co_code) % 2 == 0
-        self.code = code
-        self.consts = list(code.co_consts)
-        self.codestr = bytearray(code.co_code)
+    def __init__(self, codestr: bytes, consts, lnotab: bytes) -> None:
+        assert len(codestr) % 2 == 0
+        self.consts = list(consts)
+        self.codestr = bytearray(codestr)
         self.blocks = self.markblocks()
+        self.lnotab = lnotab
         self.const_stack = []
         self.in_consts = False
 
@@ -256,10 +263,10 @@ class Optimizer:
         self.const_stack.append(const)
         self.in_consts = True
 
-    def optimize(self) -> CodeType:
-        if 0xFF in self.code.co_lnotab:
+    def optimize(self) -> OptimizedCode:
+        if 0xFF in self.lnotab:
             # lnotab is too complicated, bail
-            return self.code
+            return None
 
         instr_index = self.find_op()
         num_operations = len(self.codestr) // CODEUNIT_SIZE
@@ -289,9 +296,9 @@ class Optimizer:
         lnotab = self.fix_lnotab()
         codestr = self.fix_jumps()
         if codestr is None:
-            return self.code
+            return None
 
-        return self.make_new_code(codestr, lnotab)
+        return OptimizedCode(bytes(codestr), tuple(self.consts), bytes(lnotab))
 
     OP_HANDLERS, ophandler = ophandler_registry()
 
@@ -525,7 +532,7 @@ class Optimizer:
 
     def fold_build_into_constant_tuple(self, c_start, opcode_end, opcode, const_count):
         if opcode == BUILD_SET:
-            newconst = frozenset(self.const_stack[-const_count:])
+            newconst = frozenset(tuple(self.const_stack[-const_count:]))
         else:
             newconst = tuple(self.const_stack[-const_count:])
 
@@ -582,25 +589,6 @@ class Optimizer:
             else:
                 assert opcode == NOP or opcode == EXTENDED_ARG
 
-    def make_new_code(self, codestr, lnotab):
-        return CodeType(
-            self.code.co_argcount,
-            self.code.co_kwonlyargcount,
-            self.code.co_nlocals,
-            self.code.co_stacksize,
-            self.code.co_flags,
-            bytes(codestr),
-            tuple(self.consts),
-            self.code.co_names,
-            self.code.co_varnames,
-            self.code.co_filename,
-            self.code.co_name,
-            self.code.co_firstlineno,
-            bytes(lnotab),
-            self.code.co_freevars,
-            self.code.co_cellvars,
-        )
-
     def markblocks(self):
         num_operations = len(self.codestr) // CODEUNIT_SIZE
         blocks = [0] * num_operations
@@ -652,7 +640,7 @@ class Optimizer:
                 nops += 1
 
     def fix_lnotab(self):
-        lnotab = bytearray(self.code.co_lnotab)
+        lnotab = bytearray(self.lnotab)
         tabsiz = len(lnotab)
         cum_orig_offset = 0
         last_offset = 0

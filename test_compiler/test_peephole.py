@@ -163,23 +163,9 @@ class PeepHoleTests(CompilerTest):
         f.assert_neither("POP_JUMP_IF_FALSE")
         f.assert_both("JUMP_ABSOLUTE")
 
-    def make_code(
+    def make_byte_code(
         self,
         *ops,
-        argcount=0,
-        kwonlyargcount=0,
-        nlocals=0,
-        stacksize=0,
-        flags=0,
-        constants=(),
-        names=(),
-        varnames=(),
-        filename="foo.py",
-        name="foo",
-        firstlineno=1,
-        lnotab=b"",
-        freevars=(),
-        cellvars=()
     ):
         res = bytearray()
         for op, oparg in ops:
@@ -187,24 +173,7 @@ class PeepHoleTests(CompilerTest):
                 raise NotImplementedError()
             res.append(op)
             res.append(oparg)
-
-        return CodeType(
-            argcount,
-            kwonlyargcount,
-            nlocals,
-            stacksize,
-            flags,
-            bytes(res),
-            constants,
-            names,
-            varnames,
-            filename,
-            name,
-            firstlineno,
-            lnotab,
-            freevars,
-            cellvars,
-        )
+        return bytes(res)
 
     def new_code(
         self,
@@ -243,27 +212,26 @@ class PeepHoleTests(CompilerTest):
         )
 
     def test_mark_blocks_one_block(self):
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["LOAD_CONST"], 0), (opmap["RETURN_VALUE"], 0), constants=(None,)
         )
-        opt = Optimizer(code)
+        opt = Optimizer(byte_code, (None, ), b'')
         self.assertEqual(opt.blocks, [0, 0])
 
     def test_mark_blocks_one_block(self):
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["LOAD_CONST"], 0),
             (opmap["POP_JUMP_IF_TRUE"], 8),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
-            (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
+            (opmap["RETURN_VALUE"], 0)
         )
-        opt = Optimizer(code)
+        opt = Optimizer(byte_code, (None, ), b'')
         self.assertEqual(opt.blocks, [0, 0, 0, 0, 1, 1])
 
     def test_mark_blocks_abs_jump_2(self):
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["NOP"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["POP_JUMP_IF_TRUE"], 10),
@@ -271,78 +239,70 @@ class PeepHoleTests(CompilerTest):
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
         )
-        opt = Optimizer(code)
+        opt = Optimizer(byte_code, (None, ), b'')
         self.assertEqual(opt.blocks, [0, 0, 0, 0, 0, 1, 1])
 
     def test_mark_blocks_abs_jump(self):
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["LOAD_CONST"], 0),
             (opmap["POP_JUMP_IF_TRUE"], 8),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
         )
-        opt = Optimizer(code)
+        opt = Optimizer(byte_code, (None, ), b'')
         self.assertEqual(opt.blocks, [0, 0, 0, 0, 1, 1])
 
     def test_mark_blocks_rel_jump(self):
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["JUMP_FORWARD"], 6),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
         )
-        opt = Optimizer(code)
+        opt = Optimizer(byte_code, (None, ), b'')
         self.assertEqual(opt.blocks, [0, 0, 0, 0, 1])
 
     def test_mark_blocks_rel_jump_2(self):
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["NOP"], 0),
             (opmap["JUMP_FORWARD"], 6),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
         )
-        opt = Optimizer(code)
+        opt = Optimizer(byte_code, (None, ), b'')
         self.assertEqual(opt.blocks, [0, 0, 0, 0, 0, 1])
 
     def test_fix_blocks(self):
         """fix blocks should update instruction offsets for removed NOPs"""
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["NOP"], 0),
             (opmap["JUMP_FORWARD"], 6),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
-            lnotab=b"\x01\x01",
         )
-        opt = Optimizer(code)
+        opt = Optimizer(byte_code, (None, ), b"\x01\x01")
         opt.fix_blocks()
         self.assertEqual(opt.blocks, [0, 0, 1, 2, 3, 4])
 
     def test_fix_lnotab(self):
         """basic smoke test that fix_lnotab removes NOPs"""
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["NOP"], 0),
             (opmap["JUMP_FORWARD"], 6),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
-            lnotab=b"\x02\x01",
         )
-        opt = Optimizer(code)
+        opt = Optimizer(byte_code, (None, ), b"\x02\x01")
         opt.fix_blocks()
         lnotab = bytes(opt.fix_lnotab())
 
@@ -350,25 +310,23 @@ class PeepHoleTests(CompilerTest):
 
     def test_fix_jump_rel(self):
         """basic smoke test that fix_lnotab removes NOPs"""
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["JUMP_FORWARD"], 6),
             (opmap["NOP"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
-            lnotab=b"\x02\x01",
         )
-        self.assertInBytecode(code, "JUMP_FORWARD", 8)
-        opt = Optimizer(code)
+        self.assertInBytecode(self.new_code(byte_code, constants=(None, )), "JUMP_FORWARD", 8)
+        opt = Optimizer(byte_code, (None, ), b"")
         opt.fix_blocks()
         code = self.new_code(bytes(opt.fix_jumps()), constants=(None,))
         self.assertInBytecode(code, "JUMP_FORWARD", 6)
 
     def test_fix_jump_abs(self):
         """basic smoke test that fix_lnotab removes NOPs"""
-        code = self.make_code(
+        byte_code = self.make_byte_code(
             (opmap["LOAD_CONST"], 0),
             (opmap["POP_JUMP_IF_TRUE"], 10),
             (opmap["NOP"], 0),
@@ -376,11 +334,9 @@ class PeepHoleTests(CompilerTest):
             (opmap["RETURN_VALUE"], 0),
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
-            constants=(None,),
-            lnotab=b"\x02\x01",
         )
-        self.assertInBytecode(code, "POP_JUMP_IF_TRUE", 10)
-        opt = Optimizer(code)
+        self.assertInBytecode(self.new_code(byte_code, constants=(None, )), "POP_JUMP_IF_TRUE", 10)
+        opt = Optimizer(byte_code, (None,), b"")
         opt.fix_blocks()
         code = self.new_code(bytes(opt.fix_jumps()), constants=(None,))
         self.assertInBytecode(code, "POP_JUMP_IF_TRUE", 8)
@@ -397,9 +353,9 @@ class PeepHoleTests(CompilerTest):
             (opmap["LOAD_CONST"], 0),
             (opmap["RETURN_VALUE"], 0),
         ]
-        code = self.make_code(*ops, constants=(None,))
-        self.assertInBytecode(code, "POP_JUMP_IF_TRUE", 259)
-        opt = Optimizer(code)
+        byte_code = self.make_byte_code(*ops)
+        self.assertInBytecode(self.new_code(byte_code, constants=(None,)), "POP_JUMP_IF_TRUE", 259)
+        opt = Optimizer(byte_code, (None,), b"")
         opt.fix_blocks()
         code = self.new_code(bytes(opt.fix_jumps()), constants=(None,))
         self.assertInBytecode(code, "EXTENDED_ARG", 0)
@@ -786,6 +742,39 @@ class PeepHoleTests(CompilerTest):
             raise Exception()
         except ValueError:
             pass""")
+
+    def test_no_rehash(self):
+        source = """
+        def f():
+            for name in {'gi_running', 'gi_frame', 'gi_code', 'gi_yieldfrom',
+                 'cr_running', 'cr_frame', 'cr_code', 'cr_await'}:
+                 print(name)
+         """
+
+        f = self.peephole_run(source, "f")
+        for func in (f.opt, f.notopt):
+            code = func.__code__
+            for const in code.co_consts:
+                if isinstance(const, frozenset):
+                    # We create the initial set in the peep holer based upon the order
+                    # of the variables.
+                    exp = frozenset(
+                        (
+                            "gi_running",
+                            "gi_frame",
+                            "gi_code",
+                            "gi_yieldfrom",
+                            "cr_running",
+                            "cr_frame",
+                            "cr_code",
+                            "cr_await",
+                        )
+                    )
+                    # Constructing the code object then creates a tuple from that, and then
+                    # interns the strings, and then creates a new frozen set
+                    exp = frozenset(tuple(exp))
+
+                    self.assertEqual(list(const), list(exp))
 
 
 if __name__ == "__main__":

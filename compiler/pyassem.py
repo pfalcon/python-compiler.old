@@ -350,8 +350,6 @@ class PyFlowGraph(FlowGraph):
         self.makeByteCode()
         assert self.stage == DONE
         code = self.newCodeObject()
-        if self.peephole:
-            code = Optimizer(code).optimize()
         return code
 
     def dump(self, io=None):
@@ -642,12 +640,20 @@ class PyFlowGraph(FlowGraph):
         if not firstline:
             firstline = 1
 
+        consts = self.getConsts()
+        code = self.lnotab.getCode()
+        lnotab = self.lnotab.getTable()
+        if self.peephole:
+            opt = Optimizer(code, consts, lnotab).optimize()
+            if opt is not None:
+                code, consts, lnotab = opt.byte_code, opt.consts, opt.lnotab
+
         return CodeType(len(self.args), len(self.kwonlyargs), nlocals,
                         self.stacksize, self.flags,
-                        self.lnotab.getCode(), self.getConsts(),
+                        code, consts,
                         tuple(self.names), tuple(self.varnames),
                         self.filename, self.name, firstline,
-                        self.lnotab.getTable(), tuple(self.freevars),
+                        lnotab, tuple(self.freevars),
                         tuple(self.cellvars))
 
     def getConsts(self):
