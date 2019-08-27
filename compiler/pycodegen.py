@@ -1,5 +1,6 @@
 from __future__ import print_function
 import imp
+import linecache
 import os
 import marshal
 import struct
@@ -663,15 +664,13 @@ class CodeGenerator:
 
     def visitBreak(self, node):
         if not self.setups:
-            raise SyntaxError("'break' outside loop (%s, %d)" % \
-                  (node.filename, node.lineno))
+            raise SyntaxError("'break' outside loop", self.syntax_error_position(node))
         self.set_lineno(node)
         self.emit('BREAK_LOOP')
 
     def visitContinue(self, node):
         if not self.setups:
-            raise SyntaxError("'continue' outside loop (%s, %d)" % \
-                  (node.filename, node.lineno))
+            raise SyntaxError("'continue' not properly in loop", self.syntax_error_position(node))
         self.set_lineno(node)
         kind, block = self.setups.top()
         if kind == LOOP:
@@ -685,14 +684,24 @@ class CodeGenerator:
                 kind, loop_block = self.setups[top]
                 if kind == LOOP:
                     break
+                elif kind == END_FINALLY:
+                    raise SyntaxError("'continue' not supported inside 'finally' clause", self.syntax_error_position(node))
             if kind != LOOP:
-                raise SyntaxError("'continue' outside loop (%s, %d)" % \
-                      (node.filename, node.lineno))
+                raise SyntaxError("'continue' not properly in loop", self.syntax_error_position(node))
             self.emit('CONTINUE_LOOP', loop_block)
             self.nextBlock()
         elif kind == END_FINALLY:
-            msg = "'continue' not allowed inside 'finally' clause (%s, %d)"
-            raise SyntaxError(msg % (node.filename, node.lineno))
+            raise SyntaxError("'continue' not supported inside 'finally' clause", self.syntax_error_position(node))
+
+    def syntax_error_position(self, node):
+        source_line = linecache.getline(self.get_module().filename, node.lineno)
+        return self.get_module().filename, node.lineno, node.col_offset, source_line or None
+
+    def syntax_error(self, msg, node):
+        source_line = linecache.getline(self.get_module().filename, node.lineno)
+        return SyntaxError(
+            msg,
+            (self.get_module().filename, node.lineno, node.col_offset, source_line or None))
 
     def visitTest(self, node, jump):
         end = self.newBlock()
@@ -1059,6 +1068,8 @@ class CodeGenerator:
                 next = self.newBlock()
                 self.emit('POP_JUMP_IF_FALSE', next)
                 self.nextBlock()
+            elif i < last:
+                raise SyntaxError("default 'except:' must be last", self.syntax_error_position(handler))
             else:
                 self.set_lineno(handler)
             self.emit('POP_TOP')
@@ -1611,6 +1622,11 @@ class CodeGenerator:
             self.emit('PRINT_NEWLINE')
 
     def visitReturn(self, node):
+        if not isinstance(self, FunctionCodeGenerator):
+            raise SyntaxError("'return' outside function", self.syntax_error_position(node))
+        elif self.scope.coroutine and self.scope.generator and node.value:
+            raise SyntaxError("'return' with value in async generator", self.syntax_error_position(node))
+
         self.set_lineno(node)
         if node.value:
             self.visit(node.value)
@@ -1619,6 +1635,8 @@ class CodeGenerator:
         self.emit('RETURN_VALUE')
 
     def visitYield(self, node):
+        if not isinstance(self, FunctionCodeGenerator):
+            raise SyntaxError("'yield' outside function", self.syntax_error_position(node))
         self.update_lineno(node)
         if node.value:
             self.visit(node.value)
@@ -1627,6 +1645,11 @@ class CodeGenerator:
         self.emit('YIELD_VALUE')
 
     def visitYieldFrom(self, node):
+        if not isinstance(self, FunctionCodeGenerator):
+            raise SyntaxError("'yield' outside function", self.syntax_error_position(node))
+        elif self.scope.coroutine:
+            raise SyntaxError("'yield from' inside async function", self.syntax_error_position(node))
+
         self.update_lineno(node)
         self.visit(node.value)
         self.emit('GET_YIELD_FROM_ITER')
@@ -1721,6 +1744,10 @@ class CodeGenerator:
         starred = None
         for elt in node.elts:
             if isinstance(elt, ast.Starred):
+                if starred is not None:
+                    raise SyntaxError("two starred expressions in assignment", self.syntax_error_position(elt))
+                elif before >= 256 or len(node.elts) - before - 1 >= (1<<31)>>8:
+                    raise SyntaxError("too many expressions in star-unpacking assignment", self.syntax_error_position(elt))
                 starred = elt.value
             elif starred:
                 after += 1
@@ -1762,7 +1789,11 @@ class CodeGenerator:
                     chunks += 1
                 else:
                     in_chunk += 1
-            self.visit(elt)
+
+            if isinstance(elt, ast.Starred):
+                self.visit(elt.value)
+            else:
+                self.visit(elt)
         # Output trailing chunk, if any
         out_chunk()
 
@@ -1771,6 +1802,12 @@ class CodeGenerator:
                 self.emit(build_ex_op, chunks)
             else:
                 self.emit(build_op, len(node.elts))
+
+    def visitStarred(self, node):
+        if isinstance(node.ctx, ast.Store):
+            raise SyntaxError("starred assignment target must be in a list or tuple", self.syntax_error_position(node))
+        else:
+            raise SyntaxError("can't use starred expression here", self.syntax_error_position(node))
 
     def visitTuple(self, node):
         self._visitListOrTuple(node, 'BUILD_TUPLE', 'BUILD_TUPLE_UNPACK')

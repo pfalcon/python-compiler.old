@@ -2,6 +2,7 @@ import ast
 import glob
 import inspect
 import compiler.pycodegen
+from compiler.pycodegen import compile as py_compile
 from .bytecode_helper import BytecodeTestCase
 from types import CodeType
 from os import path

@@ -58,7 +58,7 @@ class BadFutureParser:
             return
         if node.module != "__future__":
             return
-        raise SyntaxError("invalid future statement " + repr(node))
+        raise SyntaxError("from __future__ imports must occur at the beginning of the file")
 
 def find_futures(node):
     p1 = FutureParser()
