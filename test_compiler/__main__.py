@@ -5,6 +5,7 @@ from .test_flags import FlagTests
 from .test_graph import GraphTests
 from .test_sbs_stdlib import SbsCompileTests
 from .test_errors import ErrorTests, ErrorTestsBuiltin
+from .test_symbols import SymbolVisitorTests
 
 if __name__ == "__main__":
     unittest.main()

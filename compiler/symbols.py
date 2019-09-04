@@ -324,7 +324,7 @@ class SymbolVisitor:
         scope.coroutine = True
         self.visit(node.value, scope)
 
-    def visitGeneratorExp(self, node, parent, assign=0):
+    def visitGeneratorExp(self, node, parent):
         scope = GenExprScope(
             self.module, self.klass, name=self._scope_names[type(node)],
             lineno=node.lineno
@@ -363,7 +363,7 @@ class SymbolVisitor:
         if node.is_async:
             scope.coroutine = True
 
-        self.visit(node.target, scope, 1)
+        self.visit(node.target, scope)
         if is_outmost:
             scope.add_use(".0")
         else:
@@ -378,7 +378,7 @@ class SymbolVisitor:
         self.visit(node.expr, scope)
 
     def visitGenExprFor(self, node, scope):
-        self.visit(node.assign, scope, 1)
+        self.visit(node.assign, scope)
         self.visit(node.iter, scope)
         for if_ in node.ifs:
             self.visit(if_, scope)
@@ -386,11 +386,7 @@ class SymbolVisitor:
     def visitGenExprIf(self, node, scope):
         self.visit(node.test, scope)
 
-    def visitLambda(self, node, parent, assign=0):
-        # Lambda is an expression, so it could appear in an expression
-        # context where assign is passed.  The transformer should catch
-        # any code that has a lambda on the left-hand side.
-        assert not assign
+    def visitLambda(self, node, parent):
         scope = LambdaScope(self.module, self.klass, lineno=node.lineno)
         scope.parent = parent
         if parent.nested or isinstance(parent, FunctionScope):
@@ -454,12 +450,8 @@ class SymbolVisitor:
 
     # name can be a def or a use
 
-    # XXX a few calls and nodes expect a third "assign" arg that is
-    # true if the name is being used as an assignment.  only
-    # expressions contained within statements may have the assign arg.
-
-    def visitName(self, node, scope, assign=0):
-        if assign or isinstance(node.ctx, ast.Store):
+    def visitName(self, node, scope):
+        if isinstance(node.ctx, ast.Store):
             scope.add_def(node.id)
         elif isinstance(node.ctx, ast.Del):
             # We do something to var, so even if we "undefine" it, it's a def.
@@ -481,7 +473,7 @@ class SymbolVisitor:
     # operations that bind new names
 
     def visitFor(self, node, scope):
-        self.visit(node.target, scope, 1)
+        self.visit(node.target, scope)
         self.visit(node.iter, scope)
         self.visit(node.body, scope)
         if node.orelse:
@@ -527,7 +519,7 @@ class SymbolVisitor:
         the assign flag to their children.
         """
         for n in node.targets:
-            self.visit(n, scope, 1)
+            self.visit(n, scope)
         self.visit(node.value, scope)
 
     def visitAnnAssign(self, node, scope):
@@ -539,38 +531,38 @@ class SymbolVisitor:
             if node.simple or node.value:
                 scope.add_def(target.id)
         else:
-            self.visit(node.target, scope, 1)
+            self.visit(node.target, scope)
         self.visit(node.annotation, scope)
         if node.value:
-            self.visit(node.value, scope, 0)
+            self.visit(node.value, scope)
 
-    def visitAssName(self, node, scope, assign=1):
+    def visitAssName(self, node, scope):
         scope.add_def(node.name)
 
-    def visitAssAttr(self, node, scope, assign=0):
-        self.visit(node.expr, scope, 0)
+    def visitAssAttr(self, node, scope):
+        self.visit(node.expr, scope)
 
-    def visitSubscript(self, node, scope, assign=0):
-        self.visit(node.value, scope, 0)
-        self.visit(node.slice, scope, 0)
+    def visitSubscript(self, node, scope):
+        self.visit(node.value, scope)
+        self.visit(node.slice, scope)
 
-    def visitAttribute(self, node, scope, assign=0):
-        self.visit(node.value, scope, 0)
+    def visitAttribute(self, node, scope):
+        self.visit(node.value, scope)
 
-    def visitSlice(self, node, scope, assign=0):
+    def visitSlice(self, node, scope):
         if node.lower:
-            self.visit(node.lower, scope, 0)
+            self.visit(node.lower, scope)
         if node.upper:
-            self.visit(node.upper, scope, 0)
+            self.visit(node.upper, scope)
         if node.step:
-            self.visit(node.step, scope, 0)
+            self.visit(node.step, scope)
 
     def visitAugAssign(self, node, scope):
         # If the LHS is a name, then this counts as assignment.
         # Otherwise, it's just use.
         self.visit(node.target, scope)
         if isinstance(node.target, ast.Name):
-            self.visit(node.target, scope, 1) # XXX worry about this
+            self.visit(node.target, scope)
         self.visit(node.value, scope)
 
     # prune if statements if tests are false
