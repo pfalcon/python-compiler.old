@@ -26,7 +26,7 @@ def format_oparg(instr):
 DEFAULT_MARKER = "# This is the default script and should be updated to the minimal byte codes to be verified"
 SCRIPT_EXPECTED = "# EXPECTED:"
 SCRIPT_EXT = ".scr.py"
-SCRIPT_OPCODE_CODE = "<CODE_START>"
+SCRIPT_OPCODE_CODE = "CODE_START"
 
 
 class _AnyType:
@@ -423,7 +423,7 @@ Skipping terminates when the next instruction matches.
                     f"unexpected match {arg}, got {instr.opname} {format_oparg(instr)}",
                 )
 
-        return 0, None
+        return super().is_match(test, instrs, cur_instr, script, cur_scr)
 
     def __repr__(self):
         return f"SkipBut({self.opname!r}, {self.oparg!r})"

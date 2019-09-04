@@ -482,7 +482,7 @@ class CodeGenerator:
                 self.visit(node.args.kwarg.annotation)
                 ann_args.append(self.mangle(node.args.kwarg.arg))
         # Cannot annotate return type for lambda
-        if isinstance(node, ast.FunctionDef) and node.returns:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns:
             self.visit(node.returns)
             ann_args.append("return")
         if ann_args:
@@ -1389,7 +1389,7 @@ class CodeGenerator:
 
     def findAnn(self, stmts):
         for stmt in stmts:
-            if isinstance(stmt, (ast.ClassDef, ast.FunctionDef)):
+            if isinstance(stmt, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 # Don't recurse into definitions looking for annotations
                 continue
             elif isinstance(stmt, ast.AnnAssign):
