@@ -657,17 +657,9 @@ class PyFlowGraph(FlowGraph):
                         tuple(self.cellvars))
 
     def getConsts(self):
-        """Return a tuple for the const slot of the code object
-
-        Must convert references to code (MAKE_FUNCTION) to code
-        objects recursively.
-        """
-        l = []
-        for t, elt in self.consts:
-            if isinstance(elt, PyFlowGraph):
-                elt = elt.getCode()
-            l.append(elt)
-        return tuple(l)
+        """Return a tuple for the const slot of the code object"""
+        # Just return the constant value, removing the type portion.
+        return tuple(const[1] for const in self.consts)
 
 def isJump(opname):
     if opname[:4] == 'JUMP':
