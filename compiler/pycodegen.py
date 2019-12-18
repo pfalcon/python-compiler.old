@@ -200,12 +200,6 @@ class CodeGenerator:
     This class is an abstract base class.  Concrete subclasses must
     define an __init__() that defines self.graph and then calls the
     __init__() defined in this class.
-
-    The concrete class must also define the class attributes
-    FunctionGen, and ClassGen.  These attributes can be
-    defined in the initClass() method, which is a hook for
-    initializing these methods after all the classes have been
-    defined.
     """
 
     optimized = 0 # is namespace access optimized?
@@ -213,10 +207,6 @@ class CodeGenerator:
     class_name = None # provide default for instance variable
 
     def __init__(self):
-        if self.__initialized is None:
-            self.initClass()
-            self.__class__.__initialized = 1
-        self.checkClass()
         self.setups = misc.Stack()
         self.last_lineno = None
         self._setupGraphDelegation()
@@ -229,19 +219,6 @@ class CodeGenerator:
                 self.graph.setFlag(CO_FUTURE_GENERATOR_STOP)
             elif feature == "barry_as_FLUFL":
                 self.graph.setFlag(CO_FUTURE_BARRY_AS_BDFL)
-
-    def initClass(self):
-        """This method is called once for each class"""
-
-    def checkClass(self):
-        """Verify that class is constructed correctly"""
-        try:
-            assert hasattr(self, 'graph')
-            assert getattr(self, 'FunctionGen')
-            assert getattr(self, 'ClassGen')
-        except AssertionError:
-            intro = "Bad class construction for %s" % self.__class__.__name__
-            raise AssertionError(intro)
 
     def _setupGraphDelegation(self):
         self.emit = self.graph.emit
@@ -345,9 +322,6 @@ class CodeGenerator:
     # code objects.  They use class attributes to determine what
     # specialized code generators to use.
 
-    FunctionGen = None
-    ClassGen = None
-
     def visitModule(self, node):
         self.scopes = self.parseSymbols(node)
         self.scope = self.scopes[node]
@@ -437,7 +411,7 @@ class CodeGenerator:
         else:
             ndecorators = 0
         flags = 0
-        gen = self.FunctionGen(node, self.scopes, isLambda,
+        gen = FunctionCodeGenerator(node, self.scopes, isLambda,
                                self.class_name, self.get_module(), peephole_enabled=self.graph.peephole_enabled)
         body = node.body
         if not isLambda:
@@ -500,7 +474,7 @@ class CodeGenerator:
         for decorator in node.decorator_list:
             self.visit(decorator)
 
-        gen = self.ClassGen(node, self.scopes,
+        gen = ClassCodeGenerator(node, self.scopes,
                             self.get_module(), self.graph.peephole_enabled)
         walk(self.skip_docstring(node.body), gen)
         gen.finish()
@@ -1894,13 +1868,7 @@ class CodeGenerator:
             is_unpacking = False
 
 
-class NestedScopeMixin:
-    """Defines initClass() for nested scoping (Python 2.2-compatible)"""
-    def initClass(self):
-        self.__class__.FunctionGen = FunctionCodeGenerator
-        self.__class__.ClassGen = ClassCodeGenerator
-
-class ModuleCodeGenerator(NestedScopeMixin, CodeGenerator):
+class ModuleCodeGenerator(CodeGenerator):
     __super_init = CodeGenerator.__init__
 
     scopes = None
@@ -1915,7 +1883,7 @@ class ModuleCodeGenerator(NestedScopeMixin, CodeGenerator):
     def get_module(self):
         return self
 
-class ExpressionCodeGenerator(NestedScopeMixin, CodeGenerator):
+class ExpressionCodeGenerator(CodeGenerator):
     __super_init = CodeGenerator.__init__
 
     scopes = None
@@ -1929,7 +1897,7 @@ class ExpressionCodeGenerator(NestedScopeMixin, CodeGenerator):
     def get_module(self):
         return self
 
-class InteractiveCodeGenerator(NestedScopeMixin, CodeGenerator):
+class InteractiveCodeGenerator(CodeGenerator):
 
     __super_init = CodeGenerator.__init__
 
@@ -2024,7 +1992,7 @@ class AbstractFunctionCode:
 
     unpackTuple = unpackSequence
 
-class FunctionCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
+class FunctionCodeGenerator(AbstractFunctionCode,
                             CodeGenerator):
     super_init = CodeGenerator.__init__ # call be other init
     scopes = None
@@ -2042,7 +2010,7 @@ class FunctionCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
 
-class GenExprCodeGenerator(NestedScopeMixin, AbstractFunctionCode,
+class GenExprCodeGenerator(AbstractFunctionCode,
                            CodeGenerator):
     super_init = CodeGenerator.__init__ # call be other init
     scopes = None
@@ -2087,7 +2055,7 @@ class AbstractClassCode:
             self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 
-class ClassCodeGenerator(NestedScopeMixin, AbstractClassCode, CodeGenerator):
+class ClassCodeGenerator(AbstractClassCode, CodeGenerator):
     super_init = CodeGenerator.__init__
     scopes = None
 
