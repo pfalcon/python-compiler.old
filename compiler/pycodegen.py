@@ -19,13 +19,6 @@ from .visitor import ASTVisitor
 
 from . import config
 
-# XXX The version-specific code can go, since this code only works with 2.x.
-# Do we have Python 1.x or Python 2.x?
-try:
-    VERSION = sys.version_info[0]
-except AttributeError:
-    VERSION = 1
-
 callfunc_opcode_info = {
     # (Have *args, Have **args) : opcode
     (0,0) : "CALL_FUNCTION",
@@ -1302,9 +1295,8 @@ class CodeGenerator:
         for alias in node.names:
             name = alias.name
             asname = alias.asname
-            if VERSION > 1:
-                self.emit('LOAD_CONST', level)
-                self.emit('LOAD_CONST', None)
+            self.emit('LOAD_CONST', level)
+            self.emit('LOAD_CONST', None)
             self.emit('IMPORT_NAME', self.mangle(name))
             mod = name.split(".")[0]
             if asname:
@@ -1317,26 +1309,22 @@ class CodeGenerator:
         self.set_lineno(node)
         level = node.level
         fromlist = tuple(alias.name for alias in node.names)
-        if VERSION > 1:
-            self.emit('LOAD_CONST', level)
-            self.emit('LOAD_CONST', fromlist)
+        self.emit('LOAD_CONST', level)
+        self.emit('LOAD_CONST', fromlist)
         self.emit('IMPORT_NAME', node.module or '')
         for alias in node.names:
             name = alias.name
             asname = alias.asname
-            if VERSION > 1:
-                if name == '*':
-                    self.namespace = 0
-                    self.emit('IMPORT_STAR')
-                    # There can only be one name w/ from ... import *
-                    assert len(node.names) == 1
-                    return
-                else:
-                    self.emit('IMPORT_FROM', name)
-                    self._resolveDots(name)
-                    self.storeName(asname or name)
+            if name == '*':
+                self.namespace = 0
+                self.emit('IMPORT_STAR')
+                # There can only be one name w/ from ... import *
+                assert len(node.names) == 1
+                return
             else:
                 self.emit('IMPORT_FROM', name)
+                self._resolveDots(name)
+                self.storeName(asname or name)
         self.emit('POP_TOP')
 
     def _resolveDots(self, name):
@@ -1463,15 +1451,8 @@ class CodeGenerator:
         for child in node.nodes:
             self.visit(child)
 
-    if VERSION > 1:
-        visitAssTuple = _visitAssSequence
-        visitAssList = _visitAssSequence
-    else:
-        def visitAssTuple(self, node):
-            self._visitAssSequence(node, 'UNPACK_TUPLE')
-
-        def visitAssList(self, node):
-            self._visitAssSequence(node, 'UNPACK_LIST')
+    visitAssTuple = _visitAssSequence
+    visitAssList = _visitAssSequence
 
     # augmented assignment
 
