@@ -9,23 +9,10 @@ from typing import Any
 from compiler import misc
 from compiler.consts \
      import CO_OPTIMIZED, CO_NEWLOCALS, CO_VARARGS, CO_VARKEYWORDS
+from types import CodeType
 from .peephole import Optimizer
 
 EXTENDED_ARG = dis.opname.index('EXTENDED_ARG')
-
-VERSION = sys.version_info[0]
-if VERSION < 3:
-    def CodeType(*args):
-        args = list(args)
-        del args[1]
-        return types.CodeType(*args)
-    org_bytes = bytes
-    def bytes(l):
-        assert isinstance(l, list)
-        return org_bytes(bytearray(l))
-else:
-    CodeType = types.CodeType
-    long = int
 
 
 def instrsize(oparg):
@@ -661,15 +648,6 @@ class PyFlowGraph(FlowGraph):
         # Just return the constant value, removing the type portion.
         return tuple(const[1] for const in self.consts)
 
-def isJump(opname):
-    if opname[:4] == 'JUMP':
-        return 1
-
-
-def twobyte(val):
-    """Convert an int argument into high and low bytes"""
-    assert isinstance(val, (int, long))
-    return divmod(val, 256)
 
 class LineAddrTable:
     """lnotab
