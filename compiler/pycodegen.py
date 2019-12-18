@@ -96,7 +96,9 @@ class Expression(AbstractCompileMode):
 
     def compile(self):
         tree = self._get_tree()
-        gen = ExpressionCodeGenerator(tree, peephole_enabled=True)
+        s = symbols.SymbolVisitor()
+        walk(tree, s)
+        gen = ExpressionCodeGenerator(tree, s.scopes, peephole_enabled=True)
         walk(tree, gen)
         self.code = gen.getCode()
 
@@ -106,7 +108,9 @@ class Interactive(AbstractCompileMode):
 
     def compile(self):
         tree = self._get_tree()
-        gen = InteractiveCodeGenerator(tree, peephole_enabled=True)
+        s = symbols.SymbolVisitor()
+        walk(tree, s)
+        gen = InteractiveCodeGenerator(tree, s.scopes, peephole_enabled=True)
         walk(tree, gen)
         gen.emit('LOAD_CONST', None)
         gen.emit('RETURN_VALUE')
@@ -211,19 +215,26 @@ class CodeGenerator:
     class_name = None # provide default for instance variable
     future_flags = 0
 
-    def __init__(self):
+    def __init__(self, node, scopes, module = None, graph = None):
+        self.tree = node
+        self.scopes = scopes
+        self.module = module or self
+        if graph is not None:
+            self.graph = graph
         self.setups = misc.Stack()
         self.last_lineno = None
         self._setupGraphDelegation()
         self._div_op = "BINARY_DIVIDE"
         self.interactive = False
-        self.graph.setFlag(self.get_module().future_flags)
+        self.graph.setFlag(self.module.future_flags)
+        self.scope = self.scopes[node]
+        self.graph.setFreeVars(self.scope.get_free_vars())
+        self.graph.setCellVars(self.scope.get_cell_vars())
 
     def _setupGraphDelegation(self):
         self.emit = self.graph.emit
         self.newBlock = self.graph.newBlock
         self.nextBlock = self.graph.nextBlock
-        self.setDocstring = self.graph.setDocstring
 
     def getCode(self):
         """Return a code object"""
@@ -234,11 +245,6 @@ class CodeGenerator:
             return misc.mangle(name, self.class_name)
         else:
             return name
-
-    def parseSymbols(self, tree):
-        s = symbols.SymbolVisitor()
-        walk(tree, s)
-        return s.scopes
 
     def get_module(self):
         raise RuntimeError("should be implemented by subclasses")
@@ -323,8 +329,6 @@ class CodeGenerator:
 
     def visitInteractive(self, node):
         self.interactive = True
-        self.scopes = self.parseSymbols(node)
-        self.scope = self.scopes[node]
         self.visit(node.body)
 
     def visitModule(self, node):
@@ -338,8 +342,6 @@ class CodeGenerator:
         self.future_flags = future_flags
         self.graph.setFlag(future_flags)
 
-        self.scopes = self.parseSymbols(node)
-        self.scope = self.scopes[node]
         if node.body:
             self.set_lineno(node.body[0])
 
@@ -367,17 +369,12 @@ class CodeGenerator:
         self.emit('RETURN_VALUE')
 
     def visitExpression(self, node):
-        self.scopes = self.parseSymbols(node)
-        self.scope = self.scopes[node]
         self.visit(node.body)
         self.emit('RETURN_VALUE')
 
     def visitFunctionDef(self, node):
         self.set_lineno(node)
         self._visitFuncOrLambda(node, isLambda=0)
-        # Handled by AbstractFunctionCode?
-        #if node.doc:
-        #    self.setDocstring(node.doc)
         self.storeName(node.name)
 
     visitAsyncFunctionDef = visitFunctionDef
@@ -426,15 +423,15 @@ class CodeGenerator:
         else:
             ndecorators = 0
         flags = 0
-        gen = FunctionCodeGenerator(node, self.scopes, isLambda,
-                               self.class_name, self.get_module(), peephole_enabled=self.graph.peephole_enabled)
+        gen = make_func_codegen(node, self.graph.filename, self.scopes, isLambda,
+                               self.class_name, self.module, peephole_enabled=self.graph.peephole_enabled)
         body = node.body
         if not isLambda:
             body = self.skip_docstring(body)
 
         self.processBody(body, gen)
 
-        gen.finish()
+        gen.finishFunction()
         if node.args.defaults:
             for default in node.args.defaults:
                 self.visit(default)
@@ -489,10 +486,34 @@ class CodeGenerator:
         for decorator in node.decorator_list:
             self.visit(decorator)
 
-        gen = ClassCodeGenerator(node, self.scopes,
-                            self.get_module(), self.graph.peephole_enabled)
+        gen = make_class_codegen(node, self.graph.filename, self.scopes,
+                            self.module, self.graph.peephole_enabled)
+        gen.emit("LOAD_NAME", "__name__")
+        gen.storeName("__module__")
+        gen.emit("LOAD_CONST", gen.get_qual_prefix(gen) + gen.name)
+        gen.storeName("__qualname__")
+        if gen.findAnn(node.body):
+            gen.did_setup_annotations = True
+            gen.emit("SETUP_ANNOTATIONS")
+        else:
+            gen.did_setup_annotations = False
+
+        doc = gen.get_docstring(node)
+        if doc is not None:
+            gen.update_lineno(node.body[0])
+            gen.emit("LOAD_CONST", doc)
+            gen.storeName('__doc__')
+
         walk(self.skip_docstring(node.body), gen)
-        gen.finish()
+
+        gen.graph.startExitBlock()
+        if '__class__' in gen.scope.cells:
+            gen.emit('LOAD_CLOSURE', '__class__')
+            gen.emit('DUP_TOP')
+            gen.emit('STORE_NAME', '__classcell__')
+        else:
+            gen.emit('LOAD_CONST', None)
+        gen.emit('RETURN_VALUE')
 
         self.emit('LOAD_BUILD_CLASS')
         self._makeClosure(gen, 0)
@@ -683,14 +704,14 @@ class CodeGenerator:
             raise SyntaxError("'continue' not supported inside 'finally' clause", self.syntax_error_position(node))
 
     def syntax_error_position(self, node):
-        source_line = linecache.getline(self.get_module().filename, node.lineno)
-        return self.get_module().filename, node.lineno, node.col_offset, source_line or None
+        source_line = linecache.getline(self.graph.filename, node.lineno)
+        return self.graph.filename, node.lineno, node.col_offset, source_line or None
 
     def syntax_error(self, msg, node):
-        source_line = linecache.getline(self.get_module().filename, node.lineno)
+        source_line = linecache.getline(self.graph.filename, node.lineno)
         return SyntaxError(
             msg,
-            (self.get_module().filename, node.lineno, node.col_offset, source_line or None))
+            (self.graph.filename, node.lineno, node.col_offset, source_line or None))
 
     def visitTest(self, node, jump):
         end = self.newBlock()
@@ -779,7 +800,7 @@ class CodeGenerator:
 
     def _makeClosure(self, gen, flags):
         prefix = ""
-        if not isinstance(gen, ClassCodeGenerator):
+        if not isinstance(gen.tree, ast.ClassDef):
             prefix = self.get_qual_prefix(gen)
 
         frees = gen.scope.get_free_vars()
@@ -808,8 +829,8 @@ class CodeGenerator:
         node.args.kwarg = None
         node.body = []
         self.update_lineno(node)
-        gen = GenExprCodeGenerator(node, self.scopes, self.class_name,
-                                   self.get_module(), name, self.graph.peephole_enabled)
+        gen = make_generator_codegen(node, self.graph.filename, self.scopes, self.class_name,
+                                   self.module, name, self.graph.peephole_enabled)
         walker = ASTVisitor(gen)
         if isinstance(node, ast.ListComp):
             gen.emit('BUILD_LIST')
@@ -825,7 +846,7 @@ class CodeGenerator:
         if not isinstance(node, ast.GeneratorExp):
             gen.emit('RETURN_VALUE')
 
-        gen.finish()
+        gen.finishFunction()
 
         self._makeClosure(gen, 0)
 
@@ -1371,7 +1392,7 @@ class CodeGenerator:
                 self.checkAnnSlice(v)
 
     def checkAnnotation(self, node):
-        if isinstance(self, (ModuleCodeGenerator, ClassCodeGenerator)):
+        if isinstance(self.tree, (ast.Module, ast.ClassDef)):
             self.checkAnnExpr(node.annotation)
 
     def findAnn(self, stmts):
@@ -1397,7 +1418,7 @@ class CodeGenerator:
             self.visit(node.target)
         if isinstance(node.target, ast.Name):
             # If we have a simple name in a module or class, store the annotation
-            if node.simple and isinstance(self, (ModuleCodeGenerator, ClassCodeGenerator)):
+            if node.simple and isinstance(self.tree, (ast.Module, ast.ClassDef)):
                 assert self.did_setup_annotations
                 self.visit(node.annotation)
                 mangled = self.mangle(node.target.id)
@@ -1609,7 +1630,7 @@ class CodeGenerator:
             self.emit('PRINT_NEWLINE')
 
     def visitReturn(self, node):
-        if not isinstance(self, FunctionCodeGenerator):
+        if not isinstance(self.tree, (ast.FunctionDef, ast.AsyncFunctionDef)):
             raise SyntaxError("'return' outside function", self.syntax_error_position(node))
         elif self.scope.coroutine and self.scope.generator and node.value:
             raise SyntaxError("'return' with value in async generator", self.syntax_error_position(node))
@@ -1622,7 +1643,7 @@ class CodeGenerator:
         self.emit('RETURN_VALUE')
 
     def visitYield(self, node):
-        if not isinstance(self, FunctionCodeGenerator):
+        if not isinstance(self.tree, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.GeneratorExp)):
             raise SyntaxError("'yield' outside function", self.syntax_error_position(node))
         self.update_lineno(node)
         if node.value:
@@ -1632,7 +1653,7 @@ class CodeGenerator:
         self.emit('YIELD_VALUE')
 
     def visitYieldFrom(self, node):
-        if not isinstance(self, FunctionCodeGenerator):
+        if not isinstance(self.tree, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.GeneratorExp)):
             raise SyntaxError("'yield' outside function", self.syntax_error_position(node))
         elif self.scope.coroutine:
             raise SyntaxError("'yield from' inside async function", self.syntax_error_position(node))
@@ -1880,187 +1901,128 @@ class CodeGenerator:
             containers -= (oparg - 1)
             is_unpacking = False
 
+    @property
+    def name(self):
+        if isinstance(self.tree, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
+            return self.tree.name
+        elif isinstance(self.tree, ast.SetComp):
+            return "<setcomp>"
+        elif isinstance(self.tree, ast.ListComp):
+            return "<listcomp>"
+        elif isinstance(self.tree, ast.DictComp):
+            return "<dictcomp>"
+        elif isinstance(self.tree, ast.GeneratorExp):
+            return "<genexpr>"
+        elif isinstance(self.tree, ast.Lambda):
+            return "<lambda>"
+
+    def finishFunction(self):
+        if self.graph.current.returns:
+            return
+        self.graph.startExitBlock()
+        if not isinstance(self.tree, ast.Lambda):
+            self.emit('LOAD_CONST', None)
+        self.emit('RETURN_VALUE')
+
+def make_func_codegen(func, filename, scopes, isLambda, class_name, mod, peephole_enabled=False):
+    if isLambda:
+        name = "<lambda>"
+    else:
+        name = func.name
+    graph = make_function_graph(func, filename, scopes, class_name, mod, name, peephole_enabled)
+    res = CodeGenerator(func, scopes, mod, graph)
+    res.optimized = 1
+    res.class_name = class_name
+    return res
+
+def make_generator_codegen(func, filename, scopes, class_name, mod, name, peephole_enabled=False):
+    graph = make_function_graph(func, filename, scopes, class_name, mod, name, peephole_enabled)
+    res = CodeGenerator(func, scopes, mod, graph)
+    res.optimized = 1
+    res.class_name = class_name
+    return res
+
+def make_class_codegen(klass, filename, scopes, module, peephole_enabled=False):
+    graph = pyassem.PyFlowGraph(klass.name, filename,
+                                       optimized=0, klass=1, peephole_enabled=peephole_enabled)
+
+    doc = get_docstring(klass)
+    if doc is not None:
+        graph.setDocstring(doc)
+    graph.firstline = klass.lineno
+
+    res = CodeGenerator(klass, scopes, module, graph)
+    res.class_name = klass.name
+    return res
 
 def compile_module(tree, peephole_enabled):
-    gen = ModuleCodeGenerator(tree, peephole_enabled)
+    s = symbols.SymbolVisitor()
+    walk(tree, s)
+    gen = ModuleCodeGenerator(tree, s.scopes, peephole_enabled)
     walk(tree, gen)
     return gen
 
 
 class ModuleCodeGenerator(CodeGenerator):
-    scopes = None
-
-    def __init__(self, tree, peephole_enabled):
+    def __init__(self, tree, scopes, peephole_enabled):
         self.filename = tree.filename
         self.graph = pyassem.PyFlowGraph("<module>", tree.filename, peephole_enabled=peephole_enabled)
-        super().__init__()
-
-    def get_module(self):
-        return self
+        super().__init__(tree, scopes)
 
 class ExpressionCodeGenerator(CodeGenerator):
-    scopes = None
-    futures = ()
-
-    def __init__(self, tree, peephole_enabled):
+    def __init__(self, tree, scopes, peephole_enabled):
         self.graph = pyassem.PyFlowGraph("<expression>", tree.filename, peephole_enabled=peephole_enabled)
-        super().__init__()
-
-    def get_module(self):
-        return self
+        super().__init__(tree, scopes)
 
 class InteractiveCodeGenerator(CodeGenerator):
-    scopes = None
-    futures = ()
-
-    def __init__(self, tree, peephole_enabled):
+    def __init__(self, tree, scopes, peephole_enabled):
         self.graph = pyassem.PyFlowGraph("<interactive>", tree.filename, peephole_enabled=peephole_enabled)
-        super().__init__()
+        super().__init__(tree, scopes)
 
-    def get_module(self):
-        return self
+def make_function_graph(func, filename, scopes, class_name, mod, name, peephole_enabled=False):
+    isLambda = isinstance(func, ast.Lambda)
+    args = [misc.mangle(elt.arg, class_name) for elt in func.args.args]
+    kwonlyargs = [misc.mangle(elt.arg, class_name) for elt in func.args.kwonlyargs]
 
-class AbstractFunctionCode:
-    optimized = 1
+    starargs = []
+    if func.args.vararg:
+        starargs.append(func.args.vararg.arg)
+    if func.args.kwarg:
+        starargs.append(func.args.kwarg.arg)
 
-    def __init__(self, func, scopes, isLambda, class_name, mod, name, peephole_enabled=False):
-        self.class_name = class_name
-        self.module = mod
+    graph = pyassem.PyFlowGraph(
+        name, filename,
+        args=args, kwonlyargs=kwonlyargs, starargs=starargs,
+        optimized=1,
+        peephole_enabled=peephole_enabled
+    )
 
-        self.tree = func
-        self.name = name
-
-        args = [self.mangle(elt.arg) for elt in func.args.args]
-        kwonlyargs = [self.mangle(elt.arg) for elt in func.args.kwonlyargs]
-
-        starargs = []
-        if func.args.vararg:
-            starargs.append(func.args.vararg.arg)
-        if func.args.kwarg:
-            starargs.append(func.args.kwarg.arg)
-
-        filename = mod.filename
-        self.graph = pyassem.PyFlowGraph(
-            name, filename,
-            args=args, kwonlyargs=kwonlyargs, starargs=starargs,
-            optimized=1,
-            peephole_enabled=peephole_enabled
-        )
-        self.isLambda = isLambda
-        super().__init__()
-
-        if not isLambda:
-            doc = self.get_docstring(func)
-            if doc is not None:
-                self.setDocstring(doc)
-
-        if func.args.vararg:
-            self.graph.setFlag(CO_VARARGS)
-        if func.args.kwarg:
-            self.graph.setFlag(CO_VARKEYWORDS)
-        if self.scope.nested:
-            self.graph.setFlag(CO_NESTED)
-        if self.scope.generator and not self.scope.coroutine:
-            self.graph.setFlag(CO_GENERATOR)
-        if not self.scope.generator and self.scope.coroutine:
-            self.graph.setFlag(CO_COROUTINE)
-        if self.scope.generator and self.scope.coroutine:
-            self.graph.setFlag(CO_ASYNC_GENERATOR)
-
-        self.graph.firstline = func.lineno
-
-    def get_module(self):
-        return self.module
-
-    def finish(self):
-        if self.graph.current.returns:
-            return
-        self.graph.startExitBlock()
-        if not self.isLambda:
-            self.emit('LOAD_CONST', None)
-        self.emit('RETURN_VALUE')
-
-
-class FunctionCodeGenerator(AbstractFunctionCode,
-                            CodeGenerator):
-    scopes = None
-
-    def __init__(self, func, scopes, isLambda, class_name, mod, peephole_enabled=False):
-        self.scopes = scopes
-        self.scope = scopes[func]
-        if isLambda:
-            name = "<lambda>"
-        else:
-            name = func.name
-        super().__init__(func, scopes, isLambda, class_name, mod, name, peephole_enabled=peephole_enabled)
-        self.graph.setFreeVars(self.scope.get_free_vars())
-        self.graph.setCellVars(self.scope.get_cell_vars())
-
-class GenExprCodeGenerator(AbstractFunctionCode,
-                           CodeGenerator):
-    scopes = None
-
-    def __init__(self, gexp, scopes, class_name, mod, name, peephole_enabled=False):
-        self.scopes = scopes
-        self.scope = scopes[gexp]
-        super().__init__(gexp, scopes, False, class_name, mod, name, peephole_enabled=peephole_enabled)
-        self.graph.setFreeVars(self.scope.get_free_vars())
-        self.graph.setCellVars(self.scope.get_cell_vars())
-
-
-class AbstractClassCode:
-
-    def __init__(self, klass, scopes, module, peephole_enabled=False):
-        self.tree = klass
-        self.class_name = klass.name
-        self.module = module
-        self.name = klass.name
-        filename = module.filename
-        self.graph = pyassem.PyFlowGraph(klass.name, filename,
-                                           optimized=0, klass=1, peephole_enabled=peephole_enabled)
-        super().__init__()
-        doc = self.get_docstring(klass)
+    if not isLambda:
+        doc = get_docstring(func)
         if doc is not None:
-            self.setDocstring(doc)
-        self.graph.firstline = klass.lineno
+            graph.setDocstring(doc)
 
-    def get_module(self):
-        return self.module
+    scope = scopes[func]
+    if func.args.vararg:
+        graph.setFlag(CO_VARARGS)
+    if func.args.kwarg:
+        graph.setFlag(CO_VARKEYWORDS)
+    if scope.nested:
+        graph.setFlag(CO_NESTED)
+    if scope.generator and not scope.coroutine:
+        graph.setFlag(CO_GENERATOR)
+    if not scope.generator and scope.coroutine:
+        graph.setFlag(CO_COROUTINE)
+    if scope.generator and scope.coroutine:
+        graph.setFlag(CO_ASYNC_GENERATOR)
 
-    def finish(self):
-        self.graph.startExitBlock()
-        #if self.scope.check_name('__class__') == SC_CELL:
-        if '__class__' in self.scope.cells:
-            self.emit('LOAD_CLOSURE', '__class__')
-            self.emit('DUP_TOP')
-            self.emit('STORE_NAME', '__classcell__')
-        else:
-            self.emit('LOAD_CONST', None)
-        self.emit('RETURN_VALUE')
+    graph.firstline = func.lineno
+    return graph
 
-class ClassCodeGenerator(AbstractClassCode, CodeGenerator):
-    scopes = None
-
-    def __init__(self, klass, scopes, module, peephole_enabled=False):
-        self.scopes = scopes
-        self.scope = scopes[klass]
-        super().__init__(klass, scopes, module, peephole_enabled)
-        self.graph.setFreeVars(self.scope.get_free_vars())
-        self.graph.setCellVars(self.scope.get_cell_vars())
-        self.emit("LOAD_NAME", "__name__")
-        self.storeName("__module__")
-        self.emit("LOAD_CONST", self.get_qual_prefix(self) + self.name)
-        self.storeName("__qualname__")
-        if self.findAnn(klass.body):
-            self.did_setup_annotations = True
-            self.emit("SETUP_ANNOTATIONS")
-        else:
-            self.did_setup_annotations = False
-        doc = self.get_docstring(klass)
-        if doc is not None:
-            self.update_lineno(klass.body[0])
-            self.emit("LOAD_CONST", doc)
-            self.storeName('__doc__')
+def get_docstring(node):
+    if node.body and isinstance(node.body[0], ast.Expr) \
+       and isinstance(node.body[0].value, ast.Str):
+        return node.body[0].value.s
 
 
 def findOp(node):

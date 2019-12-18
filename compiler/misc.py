@@ -28,6 +28,8 @@ class Stack(list):
 MANGLE_LEN = 256 # magic constant from compile.c
 
 def mangle(name, klass):
+    if klass is None:
+        return name
     if not name.startswith('__'):
         return name
     if len(name) + 2 >= MANGLE_LEN:
