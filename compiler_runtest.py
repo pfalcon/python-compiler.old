@@ -38,8 +38,8 @@ text = open_with_coding(sys.argv[1]).read()
 node = ast.parse(text, sys.argv[1], "exec")
 node.filename = sys.argv[1]
 
-gen = compiler.pycodegen.ModuleCodeGenerator(node, peephole=peephole)
+gen = compiler.pycodegen.compile_module(node, True)
 codeobj = gen.getCode()
 
 import dis_stable
-dis_stable.dis(codeobj)
+dis_stable.Disassembler().dump_code(codeobj, file=sys.stdout)

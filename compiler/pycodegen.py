@@ -97,6 +97,7 @@ class Expression(AbstractCompileMode):
     def compile(self):
         tree = self._get_tree()
         gen = ExpressionCodeGenerator(tree, peephole_enabled=True)
+        walk(tree, gen)
         self.code = gen.getCode()
 
 class Interactive(AbstractCompileMode):
@@ -106,6 +107,9 @@ class Interactive(AbstractCompileMode):
     def compile(self):
         tree = self._get_tree()
         gen = InteractiveCodeGenerator(tree, peephole_enabled=True)
+        walk(tree, gen)
+        gen.emit('LOAD_CONST', None)
+        gen.emit('RETURN_VALUE')
         self.code = gen.getCode()
 
 class Module(AbstractCompileMode):
@@ -114,7 +118,7 @@ class Module(AbstractCompileMode):
 
     def compile(self, display=0):
         tree = self._get_tree()
-        gen = ModuleCodeGenerator(tree, peephole_enabled=True)
+        gen = compile_module(tree, peephole_enabled=True)
         if display:
             import pprint
             pprint.pprint(tree)
@@ -205,20 +209,15 @@ class CodeGenerator:
     optimized = 0 # is namespace access optimized?
     __initialized = None
     class_name = None # provide default for instance variable
+    future_flags = 0
 
     def __init__(self):
         self.setups = misc.Stack()
         self.last_lineno = None
         self._setupGraphDelegation()
         self._div_op = "BINARY_DIVIDE"
-
-        # XXX set flags based on future features
-        futures = self.get_module().futures
-        for feature in futures:
-            if feature == "generator_stop":
-                self.graph.setFlag(CO_FUTURE_GENERATOR_STOP)
-            elif feature == "barry_as_FLUFL":
-                self.graph.setFlag(CO_FUTURE_BARRY_AS_BDFL)
+        self.interactive = False
+        self.graph.setFlag(self.get_module().future_flags)
 
     def _setupGraphDelegation(self):
         self.emit = self.graph.emit
@@ -322,7 +321,23 @@ class CodeGenerator:
     # code objects.  They use class attributes to determine what
     # specialized code generators to use.
 
+    def visitInteractive(self, node):
+        self.interactive = True
+        self.scopes = self.parseSymbols(node)
+        self.scope = self.scopes[node]
+        self.visit(node.body)
+
     def visitModule(self, node):
+        future_flags = 0
+        for feature in future.find_futures(node):
+            if feature == "generator_stop":
+                future_flags |= CO_FUTURE_GENERATOR_STOP
+            elif feature == "barry_as_FLUFL":
+                future_flags |= CO_FUTURE_BARRY_AS_BDFL
+
+        self.future_flags = future_flags
+        self.graph.setFlag(future_flags)
+
         self.scopes = self.parseSymbols(node)
         self.scope = self.scopes[node]
         if node.body:
@@ -1204,15 +1219,13 @@ class CodeGenerator:
 
     # misc
 
-    def visitDiscard(self, node):
-        self.set_lineno(node)
-        self.visit(node.expr)
-        self.emit('POP_TOP')
-
     def visitExpr(self, node):
         self.set_lineno(node)
         # CPy3.6 discards lots of constants
-        if not is_const(node.value):
+        if self.interactive:
+            self.visit(node.value)
+            self.emit('PRINT_EXPR')
+        elif not is_const(node.value):
             self.visit(node.value)
             self.emit('POP_TOP')
 
@@ -1868,56 +1881,44 @@ class CodeGenerator:
             is_unpacking = False
 
 
-class ModuleCodeGenerator(CodeGenerator):
-    __super_init = CodeGenerator.__init__
+def compile_module(tree, peephole_enabled):
+    gen = ModuleCodeGenerator(tree, peephole_enabled)
+    walk(tree, gen)
+    return gen
 
+
+class ModuleCodeGenerator(CodeGenerator):
     scopes = None
 
     def __init__(self, tree, peephole_enabled):
         self.filename = tree.filename
         self.graph = pyassem.PyFlowGraph("<module>", tree.filename, peephole_enabled=peephole_enabled)
-        self.futures = future.find_futures(tree)
-        self.__super_init()
-        walk(tree, self)
+        super().__init__()
 
     def get_module(self):
         return self
 
 class ExpressionCodeGenerator(CodeGenerator):
-    __super_init = CodeGenerator.__init__
-
     scopes = None
     futures = ()
 
-    def __init__(self, tree):
-        self.graph = pyassem.PyFlowGraph("<expression>", tree.filename)
-        self.__super_init()
-        walk(tree, self)
+    def __init__(self, tree, peephole_enabled):
+        self.graph = pyassem.PyFlowGraph("<expression>", tree.filename, peephole_enabled=peephole_enabled)
+        super().__init__()
 
     def get_module(self):
         return self
 
 class InteractiveCodeGenerator(CodeGenerator):
-
-    __super_init = CodeGenerator.__init__
-
     scopes = None
     futures = ()
 
-    def __init__(self, tree):
-        self.graph = pyassem.PyFlowGraph("<interactive>", tree.filename)
-        self.__super_init()
-        walk(tree, self)
-        self.emit('RETURN_VALUE')
+    def __init__(self, tree, peephole_enabled):
+        self.graph = pyassem.PyFlowGraph("<interactive>", tree.filename, peephole_enabled=peephole_enabled)
+        super().__init__()
 
     def get_module(self):
         return self
-
-    def visitDiscard(self, node):
-        # XXX Discard means it's an expression.  Perhaps this is a bad
-        # name.
-        self.visit(node.expr)
-        self.emit('PRINT_EXPR')
 
 class AbstractFunctionCode:
     optimized = 1
@@ -1946,7 +1947,7 @@ class AbstractFunctionCode:
             peephole_enabled=peephole_enabled
         )
         self.isLambda = isLambda
-        self.super_init()
+        super().__init__()
 
         if not isLambda:
             doc = self.get_docstring(func)
@@ -1979,25 +1980,10 @@ class AbstractFunctionCode:
             self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 
-    def unpackSequence(self, tup):
-        if VERSION > 1:
-            self.emit('UNPACK_SEQUENCE', len(tup))
-        else:
-            self.emit('UNPACK_TUPLE', len(tup))
-        for elt in tup:
-            if isinstance(elt, tuple):
-                self.unpackSequence(elt)
-            else:
-                self._nameOp('STORE', elt)
-
-    unpackTuple = unpackSequence
 
 class FunctionCodeGenerator(AbstractFunctionCode,
                             CodeGenerator):
-    super_init = CodeGenerator.__init__ # call be other init
     scopes = None
-
-    __super_init = AbstractFunctionCode.__init__
 
     def __init__(self, func, scopes, isLambda, class_name, mod, peephole_enabled=False):
         self.scopes = scopes
@@ -2006,21 +1992,18 @@ class FunctionCodeGenerator(AbstractFunctionCode,
             name = "<lambda>"
         else:
             name = func.name
-        self.__super_init(func, scopes, isLambda, class_name, mod, name, peephole_enabled=peephole_enabled)
+        super().__init__(func, scopes, isLambda, class_name, mod, name, peephole_enabled=peephole_enabled)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
 
 class GenExprCodeGenerator(AbstractFunctionCode,
                            CodeGenerator):
-    super_init = CodeGenerator.__init__ # call be other init
     scopes = None
-
-    __super_init = AbstractFunctionCode.__init__
 
     def __init__(self, gexp, scopes, class_name, mod, name, peephole_enabled=False):
         self.scopes = scopes
         self.scope = scopes[gexp]
-        self.__super_init(gexp, scopes, False, class_name, mod, name, peephole_enabled=peephole_enabled)
+        super().__init__(gexp, scopes, False, class_name, mod, name, peephole_enabled=peephole_enabled)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
 
@@ -2035,7 +2018,7 @@ class AbstractClassCode:
         filename = module.filename
         self.graph = pyassem.PyFlowGraph(klass.name, filename,
                                            optimized=0, klass=1, peephole_enabled=peephole_enabled)
-        self.super_init()
+        super().__init__()
         doc = self.get_docstring(klass)
         if doc is not None:
             self.setDocstring(doc)
@@ -2056,15 +2039,12 @@ class AbstractClassCode:
         self.emit('RETURN_VALUE')
 
 class ClassCodeGenerator(AbstractClassCode, CodeGenerator):
-    super_init = CodeGenerator.__init__
     scopes = None
-
-    __super_init = AbstractClassCode.__init__
 
     def __init__(self, klass, scopes, module, peephole_enabled=False):
         self.scopes = scopes
         self.scope = scopes[klass]
-        self.__super_init(klass, scopes, module, peephole_enabled)
+        super().__init__(klass, scopes, module, peephole_enabled)
         self.graph.setFreeVars(self.scope.get_free_vars())
         self.graph.setCellVars(self.scope.get_cell_vars())
         self.emit("LOAD_NAME", "__name__")

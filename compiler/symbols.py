@@ -293,6 +293,10 @@ class SymbolVisitor:
         scope = self.module = self.scopes[node] = ModuleScope()
         self.visit(node.body, scope)
 
+    def visitInteractive(self, node):
+        scope = self.module = self.scopes[node] = ModuleScope()
+        self.visit(node.body, scope)
+
     visitExpression = visitModule
 
     def visitFunctionDef(self, node, parent):

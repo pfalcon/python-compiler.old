@@ -33,7 +33,7 @@ class CompilerTest(BytecodeTestCase):
         code = inspect.cleandoc("\n" + code)
         tree = ast.parse(code)
         tree.filename = ""
-        gen = compiler.pycodegen.ModuleCodeGenerator(tree, peephole_enabled)
+        gen = compiler.pycodegen.compile_module(tree, peephole_enabled)
         return gen.getCode()
 
     def run_code(self, code, peephole_enabled=True):
@@ -54,5 +54,5 @@ class CompilerTest(BytecodeTestCase):
         code = inspect.cleandoc("\n" + code)
         tree = ast.parse(code)
         tree.filename = ""
-        gen = compiler.pycodegen.ModuleCodeGenerator(tree, peephole_enabled)
+        gen = compiler.pycodegen.compile_module(tree, peephole_enabled)
         return gen.graph

@@ -46,7 +46,7 @@ def add_test(modname, fname):
             origdump = StringIO()
             Disassembler().dump_code(orig, origdump)
 
-            gen = compiler.pycodegen.ModuleCodeGenerator(node, peephole_enabled=True)
+            gen = compiler.pycodegen.compile_module(node, peephole_enabled=True)
             codeobj = gen.getCode()
             newdump = StringIO()
             Disassembler().dump_code(codeobj, newdump)
