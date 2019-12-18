@@ -1764,9 +1764,9 @@ class CodeGenerator:
                 return True
         return False
 
-    def _visitListOrTuple(self, node, build_op, build_ex_op):
+    def _visitSequence(self, node, build_op, build_inner_op, build_ex_op, ctx):
         self.update_lineno(node)
-        if isinstance(node.ctx, ast.Store):
+        if isinstance(ctx, ast.Store):
             self._visitUnpack(node)
             starred_load = False
         else:
@@ -1778,7 +1778,7 @@ class CodeGenerator:
         def out_chunk():
             nonlocal chunks, in_chunk
             if in_chunk:
-                self.emit('BUILD_TUPLE', in_chunk)
+                self.emit(build_inner_op, in_chunk)
                 in_chunk = 0
                 chunks += 1
 
@@ -1797,7 +1797,7 @@ class CodeGenerator:
         # Output trailing chunk, if any
         out_chunk()
 
-        if isinstance(node.ctx, ast.Load):
+        if isinstance(ctx, ast.Load):
             if starred_load:
                 self.emit(build_ex_op, chunks)
             else:
@@ -1810,16 +1810,13 @@ class CodeGenerator:
             raise SyntaxError("can't use starred expression here", self.syntax_error_position(node))
 
     def visitTuple(self, node):
-        self._visitListOrTuple(node, 'BUILD_TUPLE', 'BUILD_TUPLE_UNPACK')
+        self._visitSequence(node, 'BUILD_TUPLE', 'BUILD_TUPLE', 'BUILD_TUPLE_UNPACK', node.ctx)
 
     def visitList(self, node):
-        self._visitListOrTuple(node, 'BUILD_LIST', 'BUILD_LIST_UNPACK')
+        self._visitSequence(node, 'BUILD_LIST', 'BUILD_TUPLE', 'BUILD_LIST_UNPACK', node.ctx)
 
     def visitSet(self, node):
-        self.update_lineno(node)
-        for elt in node.elts:
-            self.visit(elt)
-        self.emit('BUILD_SET', len(node.elts))
+        self._visitSequence(node, 'BUILD_SET', 'BUILD_SET','BUILD_SET_UNPACK', ast.Load())
 
     def visitSlice(self, node):
         num = 2
