@@ -59,7 +59,7 @@ def compile(source, filename, mode, flags=None, dont_inherit=None):
     if flags is not None or dont_inherit is not None:
         raise RuntimeError("not implemented yet")
 
-    return make_compiler(source, filename, mode, CodeGenerator).getCode()
+    return make_compiler(source, filename, mode, get_default_generator()).getCode()
 
 
 def make_compiler(source, filename, mode, generator=None):
@@ -73,7 +73,7 @@ def make_compiler(source, filename, mode, generator=None):
         tree = ast.parse(source, filename, mode)
 
     if generator is None:
-        generator = CodeGenerator
+        generator = get_default_generator()
 
     return generator.make_code_gen("<module>", tree, filename)
 
@@ -1975,7 +1975,11 @@ class Python37CodeGenerator(CodeGenerator):
         else:
             self.visit(node)
 
+def get_default_generator():
+    if sys.version_info >= (3, 7):
+        return Python37CodeGenerator
 
+    return CodeGenerator
 
 def get_docstring(node):
     if node.body and isinstance(node.body[0], ast.Expr) \
