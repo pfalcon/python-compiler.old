@@ -5,6 +5,7 @@ from __future__ import print_function
 
 import ast
 from compiler import walk
+from compiler.visitor import ASTVisitor
 
 def is_future(stmt):
     """Return true if statement is a well-formed future statement"""
@@ -15,7 +16,7 @@ def is_future(stmt):
     else:
         return 0
 
-class FutureParser:
+class FutureParser(ASTVisitor):
 
     features = ("nested_scopes", "generators", "division",
                 "absolute_import", "with_statement", "print_function",
@@ -23,6 +24,7 @@ class FutureParser:
                 "annotations")
 
     def __init__(self):
+        super().__init__()
         self.found = {} # set
 
     def visitModule(self, node):
@@ -51,7 +53,7 @@ class FutureParser:
         """Return list of features enabled by future statements"""
         return self.found.keys()
 
-class BadFutureParser:
+class BadFutureParser(ASTVisitor):
     """Check for invalid future statements"""
 
     def visitImportFrom(self, node):

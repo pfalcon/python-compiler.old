@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 import ast
+from compiler.visitor import ASTVisitor
 from compiler.consts import SC_LOCAL, SC_GLOBAL_IMPLICIT, SC_GLOBAL_EXPLICIT, \
     SC_FREE, SC_CELL, SC_UNKNOWN
 from compiler.misc import mangle
@@ -278,8 +279,9 @@ class ClassScope(Scope):
     def __init__(self, name, module, lineno=0):
         self.__super_init(name, module, name, lineno=lineno)
 
-class SymbolVisitor:
+class SymbolVisitor(ASTVisitor):
     def __init__(self):
+        super().__init__()
         self.scopes = {}
         self.module = None
         self.klass = None

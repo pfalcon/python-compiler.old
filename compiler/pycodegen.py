@@ -135,7 +135,7 @@ CONV_STR = ord('s')
 CONV_REPR = ord('r')
 CONV_ASCII = ord('a')
 
-class CodeGenerator:
+class CodeGenerator(ASTVisitor):
     """Defines basic code generator for Python bytecode
 
     This class is an abstract base class.  Concrete subclasses must
@@ -150,6 +150,7 @@ class CodeGenerator:
     flow_graph = pyassem.PyFlowGraph
 
     def __init__(self, node, scopes, module = None, graph = None):
+        super().__init__()
         self.tree = node
         self.scopes = scopes
         self.module = module or self
@@ -345,8 +346,6 @@ class CodeGenerator:
         self._visitFuncOrLambda(node, isLambda=1)
 
     def processBody(self, body, gen):
-        walker = ASTVisitor(gen)
-
         if isinstance(body, list):
             for stmt in body:
                 gen.visit(stmt)
@@ -776,7 +775,7 @@ class CodeGenerator:
         self.update_lineno(node)
         gen = self.make_generator_codegen(node, self.graph.filename, self.scopes, self.class_name,
                                    self.module, name)
-        walker = ASTVisitor(gen)
+
         if isinstance(node, ast.ListComp):
             gen.emit('BUILD_LIST')
         elif isinstance(node, ast.SetComp):
@@ -2075,7 +2074,8 @@ def get_docstring(node):
 def findOp(node):
     """Find the op (DELETE, LOAD, STORE) in an AssTuple tree"""
     v = OpFinder()
-    walk(node, v, verbose=0)
+    v.VERBOSE = 0
+    walk(node, v)
     return v.op
 
 class OpFinder:
