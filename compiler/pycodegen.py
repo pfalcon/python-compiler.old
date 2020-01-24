@@ -33,109 +33,47 @@ TRY_FINALLY = 3
 END_FINALLY = 4
 
 def compileFile(filename, display=0):
+    # compile.c uses marshal to write a long directly, with
+    # calling the interface that would also generate a 1-byte code
+    # to indicate the type of the value.  simplest way to get the
+    # same effect is to call marshal and then skip the code.
+    fileinfo = os.stat(filename)
+
     f = open(filename, 'U')
     buf = f.read()
     f.close()
-    mod = Module(buf, filename)
-    try:
-        mod.compile(display)
-    except SyntaxError:
-        raise
-    else:
-        f = open(filename + "c", "wb")
-        mod.dump(f)
-        f.close()
+    code = compile(buf, filename, 'exec')
+    f = open(filename + "c", "wb")
+
+    hdr = struct.pack('<II', int(fileinfo.st_mtime), fileinfo.st_size)
+    f.write(imp.get_magic())
+    f.write(hdr)
+    marshal.dump(code, f)
+    f.close()
+
 
 def compile(source, filename, mode, flags=None, dont_inherit=None):
     """Replacement for builtin compile() function"""
     if flags is not None or dont_inherit is not None:
         raise RuntimeError("not implemented yet")
 
-    if mode == "single":
-        gen = Interactive(source, filename)
-    elif mode == "exec":
-        gen = Module(source, filename)
-    elif mode == "eval":
-        gen = Expression(source, filename)
-    else:
+    return make_compiler(source, filename, mode, CodeGenerator).getCode()
+
+
+def make_compiler(source, filename, mode, generator=None):
+    if mode not in ("single", "exec", "eval"):
         raise ValueError("compile() 3rd arg must be 'exec' or "
                          "'eval' or 'single'")
-    gen.compile()
-    return gen.code
 
-class AbstractCompileMode:
+    if isinstance(source, ast.AST):
+        tree = source
+    else:
+        tree = ast.parse(source, filename, mode)
 
-    mode = None # defined by subclass
+    if generator is None:
+        generator = CodeGenerator
 
-    def __init__(self, source, filename):
-        self.source = source
-        self.filename = filename
-        self.code = None
-
-    def _get_tree(self):
-        tree = ast.parse(self.source, self.filename, self.mode)
-        tree.filename = self.filename
-        return tree
-
-    def compile(self):
-        pass # implemented by subclass
-
-    def getCode(self):
-        return self.code
-
-class Expression(AbstractCompileMode):
-
-    mode = "eval"
-
-    def compile(self):
-        tree = self._get_tree()
-        s = symbols.SymbolVisitor()
-        walk(tree, s)
-        gen = CodeGenerator.make_code_gen("<expression>", tree, s.scopes)
-        walk(tree, gen)
-        self.code = gen.getCode()
-
-class Interactive(AbstractCompileMode):
-
-    mode = "single"
-
-    def compile(self):
-        tree = self._get_tree()
-        s = symbols.SymbolVisitor()
-        walk(tree, s)
-        gen = CodeGenerator.make_code_gen("<interactive>", tree, s.scopes)
-        walk(tree, gen)
-        gen.emit('LOAD_CONST', None)
-        gen.emit('RETURN_VALUE')
-        self.code = gen.getCode()
-
-class Module(AbstractCompileMode):
-
-    mode = "exec"
-
-    def compile(self, display=0):
-        tree = self._get_tree()
-        gen = compile_module(tree)
-        if display:
-            import pprint
-            pprint.pprint(tree)
-        self.code = gen.getCode()
-
-    def dump(self, f):
-        f.write(self.getPycHeader())
-        marshal.dump(self.code, f)
-
-    MAGIC = imp.get_magic()
-
-    def getPycHeader(self):
-        # compile.c uses marshal to write a long directly, with
-        # calling the interface that would also generate a 1-byte code
-        # to indicate the type of the value.  simplest way to get the
-        # same effect is to call marshal and then skip the code.
-        mtime = os.path.getmtime(self.filename)
-        # TODO: Use size of original file
-        hdr = struct.pack('<II', int(mtime), len(self.source.encode()))
-        return self.MAGIC + hdr
+    return generator.make_code_gen("<module>", tree, filename)
 
 
 def get_bool_const(node):
@@ -324,6 +262,8 @@ class CodeGenerator:
     def visitInteractive(self, node):
         self.interactive = True
         self.visit(node.body)
+        self.emit('LOAD_CONST', None)
+        self.emit('RETURN_VALUE')
 
     def visitModule(self, node):
         future_flags = 0
@@ -1981,23 +1921,20 @@ class CodeGenerator:
         return graph
 
     @classmethod
-    def make_code_gen(cls, name, tree, scopes):
-        graph = cls.flow_graph(name, tree.filename)
-        return cls(tree, scopes, graph = graph)
+    def make_code_gen(cls, name, tree, filename):
+        s = symbols.SymbolVisitor()
+        walk(tree, s)
+
+        graph = cls.flow_graph(name, filename)
+        code_gen = cls(tree, s.scopes, graph = graph)
+        walk(tree, code_gen)
+        return code_gen
 
 
 class CodeGeneratorNoPeephole(CodeGenerator):
     @classmethod
     def flow_graph(cls, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None):
         return pyassem.PyFlowGraph(name, filename, args, kwonlyargs, starargs, optimized, klass, peephole_enabled=False)
-
-
-def compile_module(tree, generator=CodeGenerator):
-    s = symbols.SymbolVisitor()
-    walk(tree, s)
-    gen = generator.make_code_gen("<module>", tree, s.scopes)
-    walk(tree, gen)
-    return gen
 
 
 def get_docstring(node):

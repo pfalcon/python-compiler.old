@@ -5,7 +5,7 @@ import glob
 from io import TextIOWrapper
 from tokenize import detect_encoding
 from unittest import TestCase
-import compiler.pycodegen
+from compiler.pycodegen import compile as py_compile
 from os import path
 import re
 from io import StringIO
@@ -46,8 +46,7 @@ def add_test(modname, fname):
             origdump = StringIO()
             Disassembler().dump_code(orig, origdump)
 
-            gen = compiler.pycodegen.compile_module(node)
-            codeobj = gen.getCode()
+            codeobj = py_compile(node, modname, "exec")
             newdump = StringIO()
             Disassembler().dump_code(codeobj, newdump)
 

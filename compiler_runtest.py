@@ -6,7 +6,7 @@ import sys
 import re
 import ast
 
-import compiler.pycodegen
+from compiler.pycodegen import compile as py_compile
 
 
 # https://www.python.org/dev/peps/pep-0263/
@@ -35,11 +35,7 @@ if sys.argv[1] == '--peephole':
 
 text = open_with_coding(sys.argv[1]).read()
 
-node = ast.parse(text, sys.argv[1], "exec")
-node.filename = sys.argv[1]
-
-gen = compiler.pycodegen.compile_module(node, True)
-codeobj = gen.getCode()
+codeobj = py_compile(text, sys.argv[1], "exec")
 
 import dis_stable
 dis_stable.Disassembler().dump_code(codeobj, file=sys.stdout)
