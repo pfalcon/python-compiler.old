@@ -555,6 +555,10 @@ class CodeGenerator(ASTVisitor):
             self.visit(node.orelse)
         self.nextBlock(after)
 
+    def emitAsyncIterYieldFrom(self):
+        self.emit('LOAD_CONST', None)
+        self.emit('YIELD_FROM')
+
     def visitAsyncFor(self, node):
         try_ = self.newBlock('async_for_try')
         except_ = self.newBlock('except')
@@ -570,8 +574,7 @@ class CodeGenerator(ASTVisitor):
 
         self.visit(node.iter)
         self.emit('GET_AITER')
-        self.emit('LOAD_CONST', None)
-        self.emit('YIELD_FROM')
+        self.emitAsyncIterYieldFrom()
 
         self.nextBlock(try_)
 
@@ -801,8 +804,7 @@ class CodeGenerator(ASTVisitor):
         self.visit(node.generators[0].iter)
         if node.generators[0].is_async:
             self.emit('GET_AITER')
-            self.emit('LOAD_CONST', None)
-            self.emit('YIELD_FROM')
+            self.emitAsyncIterYieldFrom()
         else:
             self.emit('GET_ITER')
         self.emit('CALL_FUNCTION', 1)
@@ -844,8 +846,7 @@ class CodeGenerator(ASTVisitor):
         else:
             self.visit(gen.iter)
             self.emit('GET_AITER')
-            self.emit('LOAD_CONST', None)
-            self.emit('YIELD_FROM')
+            self.emitAsyncIterYieldFrom()
 
         self.nextBlock(try_)
         self.emit('SETUP_EXCEPT', except_)
@@ -2080,6 +2081,15 @@ class Python37CodeGenerator(CodeGenerator):
     def visitConstant(self, node: ast.Constant):
         self.update_lineno(node)
         self.emit('LOAD_CONST', node.value)
+
+    def emitAsyncIterYieldFrom(self):
+        pass
+
+    def visitAsyncWith(self, node):
+        if not self.scope.coroutine:
+            raise SyntaxError("'async with' outside async function", self.syntax_error_position(node))
+
+        return super().visitAsyncWith(node)
 
 
 def get_default_generator():

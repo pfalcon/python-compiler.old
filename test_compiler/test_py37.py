@@ -1,6 +1,7 @@
 import ast
 import dis
 from .common import CompilerTest
+from compiler.pyassem import PyFlowGraph
 from compiler.pycodegen import CodeGenerator, Python37CodeGenerator
 from compiler.optimizer import AstOptimizer
 from compiler.unparse import to_expr
@@ -59,6 +60,28 @@ class Python37Tests(CompilerTest):
             code.co_flags,
             CO_NOFREE |  CO_FUTURE_ANNOTATIONS,
         )
+
+    def test_async_aiter(self):
+        # Make sure GET_AITER isn't followed by LOAD_CONST None as Python 3.7 doesn't support async __aiter__
+        for generator in (Python37CodeGenerator, CodeGenerator):
+            outer_graph = self.to_graph("""
+                async def f():
+                    async for x in y:
+                        pass
+            """, generator)
+            for outer_instr in self.graph_to_instrs(outer_graph):
+                if outer_instr.opname == "LOAD_CONST" and isinstance(outer_instr.oparg, CodeGenerator):
+                    saw_aiter = False
+                    for instr in self.graph_to_instrs(outer_instr.oparg.graph):
+                        if saw_aiter:
+                            self.assertEqual(instr.opname == "LOAD_CONST", generator is CodeGenerator)
+                            if generator is CodeGenerator:
+                                self.assertIsNone(instr.oparg)
+                            break
+
+                        if instr.opname == "GET_AITER":
+                            saw_aiter = True
+                    break
 
     def test_future_annotations(self):
         annotations = ["42"]

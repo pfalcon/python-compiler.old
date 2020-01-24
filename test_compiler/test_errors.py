@@ -1,6 +1,7 @@
 import ast
 import dis
 import inspect
+import sys
 import unittest
 from unittest import TestCase
 from .common import CompilerTest
@@ -50,6 +51,21 @@ class ErrorTests(CompilerTest):
             self.compile("""
                 class C:
                     return""")
+
+    @unittest.skipIf(sys.version_info < (3, 7), "parse fails on 3.6")
+    def test_async_with_outside_async_func(self):
+        with self.assertRaisesRegex(SyntaxError, "'async with' outside async function"):
+            self.compile("""
+                def f():
+                    async with x:
+                        pass""")
+
+    @unittest.skipIf(sys.version_info < (3, 7), "parse fails on 3.6")
+    def test_async_with_outside_func(self):
+        with self.assertRaisesRegex(SyntaxError, "'async with' outside async function"):
+            self.compile("""
+                async with x:
+                    pass""")
 
     def test_return_with_value_async_gen(self):
         with self.assertRaisesRegex(
