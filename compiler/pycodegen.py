@@ -1349,6 +1349,12 @@ class CodeGenerator:
 
         return False
 
+    def emitStoreAnnotation(self, name: str, annotation: ast.expr):
+        assert self.did_setup_annotations
+        self._visitAnnotation(annotation)
+        mangled = self.mangle(name)
+        self.emit('STORE_ANNOTATION', mangled)
+
     def visitAnnAssign(self, node):
         self.set_lineno(node)
         if node.value:
@@ -1357,10 +1363,7 @@ class CodeGenerator:
         if isinstance(node.target, ast.Name):
             # If we have a simple name in a module or class, store the annotation
             if node.simple and isinstance(self.tree, (ast.Module, ast.ClassDef)):
-                assert self.did_setup_annotations
-                self._visitAnnotation(node.annotation)
-                mangled = self.mangle(node.target.id)
-                self.emit('STORE_ANNOTATION', mangled)
+                self.emitStoreAnnotation(node.target.id, node.annotation)
         elif isinstance(node.target, ast.Attribute):
             if not node.value:
                 self.checkAnnExpr(node.target.value)
@@ -1976,6 +1979,15 @@ class Python37CodeGenerator(CodeGenerator):
             self.emit('LOAD_CONST', to_expr(node))
         else:
             self.visit(node)
+
+    def emitStoreAnnotation(self, name: str, annotation: ast.expr):
+        assert self.did_setup_annotations
+
+        self._visitAnnotation(annotation)
+        self.emit("LOAD_NAME", "__annotations__")
+        mangled = self.mangle(name)
+        self.emit("LOAD_CONST", mangled)
+        self.emit('STORE_SUBSCR')
 
     def compileJumpIf(self, test, next, is_if_true):
         if isinstance(test, ast.UnaryOp):

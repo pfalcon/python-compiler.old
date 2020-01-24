@@ -17,6 +17,9 @@ if LOAD_METHOD not in dis.opmap:
 CALL_METHOD = "CALL_METHOD"
 if CALL_METHOD not in dis.opmap:
     CALL_METHOD = "<161>"
+STORE_ANNOTATION = "STORE_ANNOTATION"
+if STORE_ANNOTATION not in dis.opmap:
+    STORE_ANNOTATION = "<0>"
 
 class Python37Tests(CompilerTest):
     def test_compile_method(self):
@@ -63,6 +66,15 @@ class Python37Tests(CompilerTest):
             code.co_flags,
             CO_NOFREE |  CO_FUTURE_ANNOTATIONS,
         )
+
+    def test_store_annotation_removed(self):
+        code = self.compile(f"class C:\n    x: int = 42", Python37CodeGenerator)
+        class_code = self.find_code(code)
+        self.assertNotInBytecode(class_code, STORE_ANNOTATION)
+
+        code = self.compile(f"class C:\n    x: int = 42", CodeGenerator)
+        class_code = self.find_code(code)
+        self.assertInBytecode(class_code, STORE_ANNOTATION)
 
     def test_compile_opt_unary_jump(self):
         graph = self.to_graph('if not abc: foo', Python37CodeGenerator)

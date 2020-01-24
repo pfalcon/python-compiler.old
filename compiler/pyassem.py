@@ -49,6 +49,10 @@ if "CALL_METHOD" not in OPMAP:
     OPMAP["CALL_METHOD"] = 161
     OPNAMES[161] = "CALL_METHOD"
 
+if "STORE_ANNOTATION" not in OPMAP:
+    OPMAP["STORE_ANNOTATION"] = 0
+    OPNAMES[0] = "STORE_ANNOTATION"
+
 
 class Instruction:
     __slots__ = ('opname', 'oparg', 'target')
