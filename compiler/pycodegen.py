@@ -1963,6 +1963,10 @@ class Python37CodeGenerator(CodeGenerator):
         walk(tree, code_gen)
         return code_gen
 
+    @classmethod
+    def flow_graph(cls, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None):
+        return pyassem.PyFlowGraph37(name, filename, args, kwonlyargs, starargs, optimized, klass)
+
     def visitCall(self, node):
         if (node.keywords or
             not isinstance(node.func, ast.Attribute) or

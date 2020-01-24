@@ -5,7 +5,7 @@ import dis
 import types
 import sys
 
-from typing import Any
+from typing import Any, List
 from compiler import misc
 from compiler.consts \
      import CO_OPTIMIZED, CO_NEWLOCALS, CO_VARARGS, CO_VARKEYWORDS
@@ -375,9 +375,8 @@ class PyFlowGraph(FlowGraph):
         if io:
             sys.stdout = save
 
-    def stackdepth_walk(self, block, depth, maxdepth):
+    def stackdepth_walk(self, block, depth=0, maxdepth=0):
         assert block is not None
-
         if block.seen or block.startdepth >= depth:
             return maxdepth
         block.seen = True
@@ -428,7 +427,7 @@ class PyFlowGraph(FlowGraph):
         for block in self.getBlocksInOrder():
             # We need to get to the first block which actually has instructions
             if block.getInstructions():
-                self.stacksize = self.stackdepth_walk(block, 0, 0)
+                self.stacksize = self.stackdepth_walk(block)
                 break
 
     def flattenGraph(self):
@@ -664,6 +663,79 @@ class PyFlowGraph(FlowGraph):
         return tuple(const[1] for const in self.consts)
 
 
+class PyFlowGraph37(PyFlowGraph):
+    def push_block(self, worklist: List[Block], block: Block, depth: int):
+        assert block.startdepth < 0 or block.startdepth >= depth, f"{block!r}: {block.startdepth} vs {depth}"
+        if block.startdepth < depth:
+            block.startdepth = depth
+            worklist.append(block)
+
+    def stackdepth_walk(self, block):
+        maxdepth = 0
+        worklist = []
+        self.push_block(worklist, block, 0)
+        while worklist:
+            block = worklist.pop()
+            next = block.next
+            depth = block.startdepth
+            assert depth >= 0
+
+            for instr in block.getInstructions():
+                if instr.opname == "SET_LINENO":
+                    continue
+
+                effect = STACK_EFFECTS_37.get(instr.opname)
+                if effect is None:
+                    raise ValueError(f"Error, opcode {instr.opname} was not found, please update STACK_EFFECTS")
+                if isinstance(effect, int):
+                    delta = effect
+                else:
+                    delta = effect(instr.oparg, 0)
+
+                new_depth = depth + delta
+                if new_depth > maxdepth:
+                    maxdepth = new_depth
+
+                assert depth >= 0
+
+                opcode = OPMAP[instr.opname]
+                if opcode in dis.hasjabs or opcode in dis.hasjrel:
+                    if isinstance(effect, int):
+                        delta = effect
+                    else:
+                        delta = effect(instr.oparg, 1)
+
+                    target_depth = depth + delta
+                    if target_depth > maxdepth:
+                        maxdepth = target_depth
+
+                    assert target_depth >= 0
+                    if instr.opname == "CONTINUE_LOOP":
+                        # Pops a variable number of values from the stack,
+                        # but the target should be already proceeding.
+                        assert instr.target.startdepth >= 0
+                        assert instr.target.startdepth <= depth
+                        # remaining code is dead
+                        next = None
+                        break
+
+                    self.push_block(worklist, instr.target, target_depth)
+
+                depth = new_depth
+
+                if instr.opname in ("JUMP_ABSOLUTE", "JUMP_FORWARD", "RETURN_VALUE", "RAISE_VARARGS", "BREAK_LOOP"):
+                    # Remaining code is dead
+                    next = None
+                    break
+
+            # TODO(dinoviehland): we could save the delta we came up with here and
+            # reapply it on subsequent walks rather than having to walk all of the
+            # instructions again.
+            if next:
+                self.push_block(worklist, next, depth)
+
+        return maxdepth
+
 class LineAddrTable:
     """lnotab
 
@@ -808,8 +880,8 @@ STACK_EFFECTS = dict(
 
     STORE_NAME = -1,
     DELETE_NAME = 0,
-    UNPACK_SEQUENCE = lambda oparg: oparg - 1,
-    UNPACK_EX = lambda oparg: (oparg & 0xFF) + (oparg >> 8),
+    UNPACK_SEQUENCE = lambda oparg, jmp = 0: oparg - 1,
+    UNPACK_EX = lambda oparg, jmp = 0: (oparg & 0xFF) + (oparg >> 8),
     FOR_ITER = 1,  # or -1, at end of iterator
 
     STORE_ATTR = -2,
@@ -819,20 +891,20 @@ STACK_EFFECTS = dict(
     LOAD_CONST = 1,
     LOAD_NAME = 1,
 
-    BUILD_TUPLE = lambda oparg: 1 - oparg,
-    BUILD_LIST = lambda oparg: 1 - oparg,
-    BUILD_SET = lambda oparg: 1 - oparg,
-    BUILD_STRING =  lambda oparg: 1 - oparg,
+    BUILD_TUPLE = lambda oparg, jmp = 0: 1 - oparg,
+    BUILD_LIST = lambda oparg, jmp = 0: 1 - oparg,
+    BUILD_SET = lambda oparg, jmp = 0: 1 - oparg,
+    BUILD_STRING =  lambda oparg, jmp = 0: 1 - oparg,
 
-    BUILD_LIST_UNPACK = lambda oparg: 1 - oparg,
-    BUILD_TUPLE_UNPACK = lambda oparg: 1 - oparg,
-    BUILD_TUPLE_UNPACK_WITH_CALL = lambda oparg: 1 - oparg,
-    BUILD_SET_UNPACK = lambda oparg: 1 - oparg,
-    BUILD_MAP_UNPACK = lambda oparg: 1 - oparg,
-    BUILD_MAP_UNPACK_WITH_CALL = lambda oparg: 1 - oparg,
+    BUILD_LIST_UNPACK = lambda oparg, jmp = 0: 1 - oparg,
+    BUILD_TUPLE_UNPACK = lambda oparg, jmp = 0: 1 - oparg,
+    BUILD_TUPLE_UNPACK_WITH_CALL = lambda oparg, jmp = 0: 1 - oparg,
+    BUILD_SET_UNPACK = lambda oparg, jmp = 0: 1 - oparg,
+    BUILD_MAP_UNPACK = lambda oparg, jmp = 0: 1 - oparg,
+    BUILD_MAP_UNPACK_WITH_CALL = lambda oparg, jmp = 0: 1 - oparg,
 
-    BUILD_MAP = lambda oparg: 1 - 2 * oparg,
-    BUILD_CONST_KEY_MAP = lambda oparg: -oparg,
+    BUILD_MAP = lambda oparg, jmp = 0: 1 - 2 * oparg,
+    BUILD_CONST_KEY_MAP = lambda oparg, jmp = 0: -oparg,
     LOAD_ATTR = 0,
     COMPARE_OP = -1,
     IMPORT_NAME = -1,
@@ -860,12 +932,12 @@ STACK_EFFECTS = dict(
     DELETE_FAST = 0,
     STORE_ANNOTATION = -1,
 
-    RAISE_VARARGS = lambda oparg: -oparg,
-    CALL_FUNCTION = lambda oparg: -oparg,
-    CALL_FUNCTION_KW = lambda oparg: -oparg - 1,
-    CALL_FUNCTION_EX = lambda oparg:  -1 - ((oparg & 0x01) != 0),
-    MAKE_FUNCTION = lambda oparg: -1 - ((oparg & 0x01) != 0) - ((oparg & 0x02) != 0) - ((oparg & 0x04) != 0) - ((oparg & 0x08) != 0),
-    BUILD_SLICE = lambda oparg: -2 if oparg == 3 else -1,
+    RAISE_VARARGS = lambda oparg, jmp = 0: -oparg,
+    CALL_FUNCTION = lambda oparg, jmp = 0: -oparg,
+    CALL_FUNCTION_KW = lambda oparg, jmp = 0: -oparg - 1,
+    CALL_FUNCTION_EX = lambda oparg, jmp = 0:  -1 - ((oparg & 0x01) != 0),
+    MAKE_FUNCTION = lambda oparg, jmp = 0: -1 - ((oparg & 0x01) != 0) - ((oparg & 0x02) != 0) - ((oparg & 0x04) != 0) - ((oparg & 0x08) != 0),
+    BUILD_SLICE = lambda oparg, jmp = 0: -2 if oparg == 3 else -1,
 
     LOAD_CLOSURE = 1,
     LOAD_DEREF = 1,
@@ -880,8 +952,25 @@ STACK_EFFECTS = dict(
     GET_YIELD_FROM_ITER = 0,
     # If there's a fmt_spec on the stack, we go from 2->1,
     # else 1->1.
-    FORMAT_VALUE = lambda oparg: -1 if (oparg & FVS_MASK) == FVS_HAVE_SPEC else 0,
+    FORMAT_VALUE = lambda oparg, jmp = 0: -1 if (oparg & FVS_MASK) == FVS_HAVE_SPEC else 0,
     SET_LINENO = 0,
     LOAD_METHOD = 1,
-    CALL_METHOD = lambda oparg: -oparg - 1,
+    CALL_METHOD = lambda oparg, jmp = 0: -oparg - 1,
+)
+
+STACK_EFFECTS_37 = dict(
+    STACK_EFFECTS,
+    SETUP_WITH = lambda oparg, jmp = 0: 6 if jmp else 1,
+    WITH_CLEANUP_START = 2, # or 1, depending on TOS
+    WITH_CLEANUP_FINISH = -3,
+    POP_EXCEPT=-3,
+    END_FINALLY=-6,
+    FOR_ITER= lambda oparg, jmp = 0: -1 if jmp > 0 else 1,
+    JUMP_IF_TRUE_OR_POP=lambda oparg, jmp = 0: 0 if jmp else -1,
+    JUMP_IF_FALSE_OR_POP=lambda oparg, jmp = 0: 0 if jmp else -1,
+    SETUP_EXCEPT=lambda oparg, jmp: 6 if jmp else 0,
+    SETUP_FINALLY=lambda oparg, jmp: 6 if jmp else 0,
+    CALL_METHOD=lambda oparg, jmp: -oparg-1,
+    SETUP_ASYNC_WITH=lambda oparg, jmp: (-1 + 6) if jmp else 0,
+    LOAD_METHOD=1,
 )
