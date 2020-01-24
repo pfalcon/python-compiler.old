@@ -16,6 +16,7 @@ from compiler.consts import (CO_VARARGS, CO_VARKEYWORDS, CO_NEWLOCALS,
      CO_FUTURE_ABSIMPORT, CO_FUTURE_WITH_STATEMENT, CO_FUTURE_PRINT_FUNCTION,
      CO_COROUTINE, CO_ASYNC_GENERATOR, CO_FUTURE_BARRY_AS_BDFL, CO_FUTURE_GENERATOR_STOP,
      CO_FUTURE_ANNOTATIONS)
+from compiler.optimizer import AstOptimizer
 from compiler.unparse import to_expr
 from .visitor import ASTVisitor
 
@@ -1951,6 +1952,17 @@ class CodeGeneratorNoPeephole(CodeGenerator):
 
 
 class Python37CodeGenerator(CodeGenerator):
+    @classmethod
+    def make_code_gen(cls, name, tree, filename):
+        tree = AstOptimizer().visit(tree)
+        s = symbols.SymbolVisitor()
+        walk(tree, s)
+
+        graph = cls.flow_graph(name, filename)
+        code_gen = cls(tree, s.scopes, graph = graph)
+        walk(tree, code_gen)
+        return code_gen
+
     def visitCall(self, node):
         if (node.keywords or
             not isinstance(node.func, ast.Attribute) or

@@ -147,6 +147,13 @@ class Python37Tests(CompilerTest):
         graph = self.to_graph('assert not a > b > c', CodeGenerator)
         self.assertInGraph(graph, 'UNARY_NOT')
 
+    def test_compile_opt_enabled(self):
+        graph = self.to_graph('x = -1', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'UNARY_NEGATIVE')
+
+        graph = self.to_graph('x = -1', CodeGenerator)
+        self.assertInGraph(graph, 'UNARY_NEGATIVE')
+
     def test_ast_optimizer(self):
         cases = [
             ("+1", "1"),
