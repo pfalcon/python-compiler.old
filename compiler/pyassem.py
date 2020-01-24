@@ -38,6 +38,17 @@ FVC_ASCII     = 0x3
 FVS_MASK      = 0x4
 FVS_HAVE_SPEC = 0x4
 
+OPNAMES = list(dis.opname)
+OPMAP = dict(dis.opmap)
+
+if "LOAD_METHOD" not in OPMAP:
+    OPMAP["LOAD_METHOD"] = 160
+    OPNAMES[160] = "LOAD_METHOD"
+
+if "CALL_METHOD" not in OPMAP:
+    OPMAP["CALL_METHOD"] = 161
+    OPNAMES[161] = "CALL_METHOD"
+
 
 class Instruction:
     __slots__ = ('opname', 'oparg', 'target')
@@ -465,10 +476,10 @@ class PyFlowGraph(FlowGraph):
 
     hasjrel = set()
     for i in dis.hasjrel:
-        hasjrel.add(dis.opname[i])
+        hasjrel.add(OPNAMES[i])
     hasjabs = set()
     for i in dis.hasjabs:
-        hasjabs.add(dis.opname[i])
+        hasjabs.add(OPNAMES[i])
 
     def convertArgs(self):
         """Convert arguments from symbolic to concrete form"""
@@ -545,6 +556,7 @@ class PyFlowGraph(FlowGraph):
     _convert_STORE_ATTR = _convert_NAME
     _convert_LOAD_ATTR = _convert_NAME
     _convert_DELETE_ATTR = _convert_NAME
+    _convert_LOAD_METHOD = _convert_NAME
 
     def _convert_GLOBAL(self, arg):
         return self._lookupName(arg, self.names)
@@ -598,17 +610,12 @@ class PyFlowGraph(FlowGraph):
                     lnotab.addCode(EXTENDED_ARG, (oparg >> 16) & 0xff)
                 if oparg > 0xff:
                     lnotab.addCode(EXTENDED_ARG, (oparg >> 8) & 0xff)
-                lnotab.addCode(self.opnum[t.opname], oparg & 0xff)
+                lnotab.addCode(OPMAP[t.opname], oparg & 0xff)
             except ValueError:
                 print(t.opname, oparg)
-                print(self.opnum[t.opname], oparg)
+                print(OPMAP[t.opname], oparg)
                 raise
         self.stage = DONE
-
-    opnum = {}
-    for num in range(len(dis.opname)):
-        opnum[dis.opname[num]] = num
-    del num
 
     def newCodeObject(self):
         assert self.stage == DONE
@@ -867,4 +874,6 @@ STACK_EFFECTS = dict(
     # else 1->1.
     FORMAT_VALUE = lambda oparg: -1 if (oparg & FVS_MASK) == FVS_HAVE_SPEC else 0,
     SET_LINENO = 0,
+    LOAD_METHOD = 1,
+    CALL_METHOD = lambda oparg: -oparg - 1,
 )

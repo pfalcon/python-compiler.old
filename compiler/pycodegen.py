@@ -1937,6 +1937,23 @@ class CodeGeneratorNoPeephole(CodeGenerator):
         return pyassem.PyFlowGraph(name, filename, args, kwonlyargs, starargs, optimized, klass, peephole_enabled=False)
 
 
+class Python37CodeGenerator(CodeGenerator):
+    def visitCall(self, node):
+        if (node.keywords or
+            not isinstance(node.func, ast.Attribute) or
+            not isinstance(node.func.ctx, ast.Load) or
+            any(isinstance(arg, ast.Starred) for arg in node.args)):
+            # We cannot optimize this call
+            return super().visitCall(node)
+
+        self.update_lineno(node)
+        self.visit(node.func.value)
+        self.emit('LOAD_METHOD', self.mangle(node.func.attr))
+        for arg in node.args:
+            self.visit(arg)
+        self.emit('CALL_METHOD', len(node.args))
+
+
 def get_docstring(node):
     if node.body and isinstance(node.body[0], ast.Expr) \
        and isinstance(node.body[0].value, ast.Str):
