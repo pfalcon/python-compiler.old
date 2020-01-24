@@ -194,8 +194,8 @@ class Block:
         self.outEdges = set()
         self.label = label
         self.bid = None
-        self.next = []
-        self.prev = []
+        self.next = None
+        self.prev = None
         self.returns = False
         self.offset = 0
         self.seen = False # visited during stack depth calculation
@@ -205,7 +205,7 @@ class Block:
         data = []
         data.append(f'id={self.bid}')
         if self.next:
-            data.append(f'next={self.next[0].bid}')
+            data.append(f'next={self.next.bid}')
         extras = ", ".join(data)
         if self.label:
             return f"<block {self.label} {extras}>"
@@ -230,10 +230,10 @@ class Block:
         self.outEdges.add(block)
 
     def addNext(self, block):
-        self.next.append(block)
-        assert len(self.next) == 1, map(str, self.next)
-        block.prev.append(self)
-        assert len(block.prev) == 1, map(str, block.prev)
+        assert self.next is None, next
+        self.next = block
+        assert block.prev is None, block.prev
+        block.prev = self
 
     _uncond_transfer = ('RETURN_VALUE', 'RAISE_VARARGS',
                         'JUMP_ABSOLUTE', 'JUMP_FORWARD', 'CONTINUE_LOOP',
@@ -250,11 +250,11 @@ class Block:
         return self.insts and self.insts[-1].opname == "RETURN_VALUE"
 
     def get_children(self):
-        return list(self.outEdges) + self.next
+        return list(self.outEdges) + [self.next]
 
     def get_followers(self):
         """Get the whole list of followers, including the next block."""
-        followers = set(self.next)
+        followers = {self.next}
         # Blocks that must be emitted *after* this one, because of
         # bytecode offsets (e.g. relative jumps) pointing to them.
         for inst in self.insts:
@@ -372,6 +372,8 @@ class PyFlowGraph(FlowGraph):
             sys.stdout = save
 
     def stackdepth_walk(self, block, depth, maxdepth):
+        assert block is not None
+
         if block.seen or block.startdepth >= depth:
             return maxdepth
         block.seen = True
@@ -407,8 +409,7 @@ class PyFlowGraph(FlowGraph):
                     return maxdepth
 
         if block.next:
-            assert len(block.next) == 1
-            maxdepth = self.stackdepth_walk(block.next[0], depth, maxdepth)
+            maxdepth = self.stackdepth_walk(block.next, depth, maxdepth)
 
         block.seen = False
         return maxdepth

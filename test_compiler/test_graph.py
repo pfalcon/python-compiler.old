@@ -19,7 +19,7 @@ class GraphTests(CompilerTest):
 
     def format_graph(self, graph):
         if graph.next:
-            return f"Block({repr(graph.label)}, {self.format_graph(graph.next[0])})"
+            return f"Block({repr(graph.label)}, {self.format_graph(graph.next)})"
         return f"Block({repr(graph.label)})"
 
     def assert_graph_equal(self, graph, expected):
@@ -34,10 +34,10 @@ class GraphTests(CompilerTest):
     def assert_graph_equal_worker(self, compiled, expected):
         self.assertEqual(compiled.label, expected.label)
         if expected.next:
-            self.assertEqual(len(compiled.next), 1)
-            self.assert_graph_equal_worker(compiled.next[0], expected.next)
+            self.assertIsNotNone(compiled.next)
+            self.assert_graph_equal_worker(compiled.next, expected.next)
         else:
-            self.assertEqual(compiled.next, [])
+            self.assertEqual(compiled.next, None)
 
     def get_child_graph(self, graph, name):
         for block in graph.ordered_blocks:
