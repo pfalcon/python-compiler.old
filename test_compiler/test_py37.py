@@ -67,6 +67,18 @@ class Python37Tests(CompilerTest):
             CO_NOFREE |  CO_FUTURE_ANNOTATIONS,
         )
 
+    def test_circular_import_as(self):
+        """verifies that we emit an IMPORT_FROM to enable circular imports
+        when compiling an absolute import to verify that they can support
+        circular imports"""
+        code = self.compile(f"import x.y as b", Python37CodeGenerator)
+        self.assertInBytecode(code, 'IMPORT_FROM')
+        self.assertNotInBytecode(code, 'LOAD_ATTR')
+
+        code = self.compile(f"import x.y as b", CodeGenerator)
+        self.assertNotInBytecode(code, 'IMPORT_FROM')
+        self.assertInBytecode(code, 'LOAD_ATTR')
+
     def test_store_annotation_removed(self):
         code = self.compile(f"class C:\n    x: int = 42", Python37CodeGenerator)
         class_code = self.find_code(code)

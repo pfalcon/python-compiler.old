@@ -1250,8 +1250,7 @@ class CodeGenerator:
             self.emit('IMPORT_NAME', self.mangle(name))
             mod = name.split(".")[0]
             if asname:
-                self._resolveDots(name)
-                self.storeName(asname)
+                self.emitImportAs(name, asname)
             else:
                 self.storeName(mod)
 
@@ -1273,16 +1272,17 @@ class CodeGenerator:
                 return
             else:
                 self.emit('IMPORT_FROM', name)
-                self._resolveDots(name)
                 self.storeName(asname or name)
         self.emit('POP_TOP')
 
-    def _resolveDots(self, name):
+    def emitImportAs(self, name: str, asname: str):
         elts = name.split(".")
         if len(elts) == 1:
+            self.storeName(asname)
             return
         for elt in elts[1:]:
             self.emit('LOAD_ATTR', elt)
+        self.storeName(asname)
 
     def visitAttribute(self, node):
         self.update_lineno(node)
@@ -1988,6 +1988,21 @@ class Python37CodeGenerator(CodeGenerator):
         mangled = self.mangle(name)
         self.emit("LOAD_CONST", mangled)
         self.emit('STORE_SUBSCR')
+
+    def emitImportAs(self, name: str, asname: str):
+        elts = name.split(".")
+        if len(elts) == 1:
+            self.storeName(asname)
+            return
+        first = True
+        for elt in elts[1:]:
+            if not first:
+                self.emit('ROT_TWO')
+                self.emit('POP_TOP')
+            self.emit('IMPORT_FROM', elt)
+            first = False
+        self.storeName(asname)
+        self.emit('POP_TOP')
 
     def compileJumpIf(self, test, next, is_if_true):
         if isinstance(test, ast.UnaryOp):
