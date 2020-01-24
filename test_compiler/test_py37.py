@@ -195,9 +195,23 @@ class Python37Tests(CompilerTest):
             ("1[0]", "1[0]"),
             ("x[+1]", "x[1]"),
             ("(+1)[x]", "1[x]"),
+            ("[x for x in [1,2,3]]", "[x for x in (1, 2, 3)]"),
+            ("(x for x in [1,2,3])", "(x for x in (1, 2, 3))"),
+            ("{x for x in [1,2,3]}", "{x for x in (1, 2, 3)}"),
+            ("{x for x in [--1,2,3]}", "{x for x in (1, 2, 3)}"),
+            ("{--1 for x in [1,2,3]}", "{1 for x in (1, 2, 3)}"),
+            ("x in [1,2,3]", "x in (1, 2, 3)"),
+            ("x in x in [1,2,3]", "x in x in (1, 2, 3)"),
+            ("x in [1,2,3] in x", "x in [1, 2, 3] in x"),
         ]
         for inp, expected in cases:
             optimizer = AstOptimizer()
             tree = ast.parse(inp)
             optimized = to_expr(optimizer.visit(tree).body[0].value)
             self.assertEqual(expected, optimized, "Input was: " + inp)
+
+    def test_ast_optimizer_for(self):
+            optimizer = AstOptimizer()
+            tree = ast.parse('for x in [1,2,3]: pass')
+            optimized = optimizer.visit(tree).body[0]
+            self.assertEqual(to_expr(optimized.iter), "(1, 2, 3)")

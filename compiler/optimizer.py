@@ -131,3 +131,52 @@ class AstOptimizer(ASTRewriter):
                 pass
 
         return self.update_node(node, value=value, slice=slice)
+
+    def _visitIter(self, node: ast.expr) -> ast.expr:
+        if isinstance(node, ast.List):
+            elts = self.visit(node.elts)
+            res = self.makeConstTuple(elts)
+            if res is not None:
+                return copy_location(res, node)
+
+            return self.update_node(node, elts=elts)
+        elif isinstance(node, ast.Set):
+            elts = self.visit(node.elts)
+            res = self.makeConstTuple(elts)
+            if res is not None:
+                return copy_location(Constant(frozenset(res.value)), node)
+
+            return self.update_node(node, elts=elts)
+
+        return self.generic_visit(node)
+
+    def visitcomprehension(self, node: ast.comprehension) -> ast.expr:
+        target = self.visit(node.target)
+        iter = self.visit(node.iter)
+        ifs = self.visit(node.ifs)
+        iter = self._visitIter(iter)
+
+        return self.update_node(node, target=target, iter=iter, ifs=ifs)
+
+    def visitFor(self, node: ast.For) -> ast.expr:
+        target = self.visit(node.target)
+        iter = self.visit(node.iter)
+        body = self.visit(node.body)
+        orelse = self.visit(node.orelse)
+
+        iter = self._visitIter(iter)
+        return self.update_node(
+            node, target=target, iter=iter, body=body, orelse=orelse
+        )
+
+    def visitCompare(self, node: ast.Compare) -> ast.expr:
+        left = self.visit(node.left)
+        comparators = self.visit(node.comparators)
+
+        if isinstance(node.ops[-1], (ast.In, ast.NotIn)):
+            new_iter = self._visitIter(comparators[-1])
+            if new_iter is not None and new_iter is not comparators[-1]:
+                comparators = list(comparators)
+                comparators[-1] = new_iter
+
+        return self.update_node(node, left=left, comparators=comparators)
