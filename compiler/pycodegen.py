@@ -91,7 +91,7 @@ class Expression(AbstractCompileMode):
         tree = self._get_tree()
         s = symbols.SymbolVisitor()
         walk(tree, s)
-        gen = CodeGenerator.make_code_gen("<expression>", tree, s.scopes, True)
+        gen = CodeGenerator.make_code_gen("<expression>", tree, s.scopes)
         walk(tree, gen)
         self.code = gen.getCode()
 
@@ -103,7 +103,7 @@ class Interactive(AbstractCompileMode):
         tree = self._get_tree()
         s = symbols.SymbolVisitor()
         walk(tree, s)
-        gen = CodeGenerator.make_code_gen("<interactive>", tree, s.scopes, True)
+        gen = CodeGenerator.make_code_gen("<interactive>", tree, s.scopes)
         walk(tree, gen)
         gen.emit('LOAD_CONST', None)
         gen.emit('RETURN_VALUE')
@@ -115,7 +115,7 @@ class Module(AbstractCompileMode):
 
     def compile(self, display=0):
         tree = self._get_tree()
-        gen = compile_module(tree, peephole_enabled=True)
+        gen = compile_module(tree)
         if display:
             import pprint
             pprint.pprint(tree)
@@ -207,6 +207,7 @@ class CodeGenerator:
     __initialized = None
     class_name = None # provide default for instance variable
     future_flags = 0
+    flow_graph = pyassem.PyFlowGraph
 
     def __init__(self, node, scopes, module = None, graph = None):
         self.tree = node
@@ -417,7 +418,7 @@ class CodeGenerator:
             ndecorators = 0
         flags = 0
         gen = self.make_func_codegen(node, self.graph.filename, self.scopes, isLambda,
-                               self.class_name, self.module, peephole_enabled=self.graph.peephole_enabled)
+                               self.class_name, self.module)
         body = node.body
         if not isLambda:
             body = self.skip_docstring(body)
@@ -480,7 +481,7 @@ class CodeGenerator:
             self.visit(decorator)
 
         gen = self.make_class_codegen(node, self.graph.filename, self.scopes,
-                            self.module, self.graph.peephole_enabled)
+                            self.module)
         gen.emit("LOAD_NAME", "__name__")
         gen.storeName("__module__")
         gen.emit("LOAD_CONST", gen.get_qual_prefix(gen) + gen.name)
@@ -823,7 +824,7 @@ class CodeGenerator:
         node.body = []
         self.update_lineno(node)
         gen = self.make_generator_codegen(node, self.graph.filename, self.scopes, self.class_name,
-                                   self.module, name, self.graph.peephole_enabled)
+                                   self.module, name)
         walker = ASTVisitor(gen)
         if isinstance(node, ast.ListComp):
             gen.emit('BUILD_LIST')
@@ -1906,29 +1907,29 @@ class CodeGenerator:
         self.emit('RETURN_VALUE')
 
     @classmethod
-    def make_func_codegen(cls, func, filename, scopes, isLambda, class_name, mod, peephole_enabled=False):
+    def make_func_codegen(cls, func, filename, scopes, isLambda, class_name, mod):
         if isLambda:
             name = "<lambda>"
         else:
             name = func.name
-        graph = cls.make_function_graph(func, filename, scopes, class_name, mod, name, peephole_enabled)
+        graph = cls.make_function_graph(func, filename, scopes, class_name, mod, name)
         res = cls(func, scopes, mod, graph)
         res.optimized = 1
         res.class_name = class_name
         return res
 
     @classmethod
-    def make_generator_codegen(cls, func, filename, scopes, class_name, mod, name, peephole_enabled=False):
-        graph = cls.make_function_graph(func, filename, scopes, class_name, mod, name, peephole_enabled)
+    def make_generator_codegen(cls, func, filename, scopes, class_name, mod, name):
+        graph = cls.make_function_graph(func, filename, scopes, class_name, mod, name)
         res = cls(func, scopes, mod, graph)
         res.optimized = 1
         res.class_name = class_name
         return res
 
     @classmethod
-    def make_class_codegen(cls, klass, filename, scopes, module, peephole_enabled=False):
-        graph = pyassem.PyFlowGraph(klass.name, filename,
-                                           optimized=0, klass=1, peephole_enabled=peephole_enabled)
+    def make_class_codegen(cls, klass, filename, scopes, module):
+        graph = cls.flow_graph(klass.name, filename,
+                                           optimized=0, klass=1)
 
         doc = get_docstring(klass)
         if doc is not None:
@@ -1940,7 +1941,7 @@ class CodeGenerator:
         return res
 
     @classmethod
-    def make_function_graph(cls, func, filename, scopes, class_name, mod, name, peephole_enabled=False):
+    def make_function_graph(cls, func, filename, scopes, class_name, mod, name):
         isLambda = isinstance(func, ast.Lambda)
         args = [misc.mangle(elt.arg, class_name) for elt in func.args.args]
         kwonlyargs = [misc.mangle(elt.arg, class_name) for elt in func.args.kwonlyargs]
@@ -1951,11 +1952,10 @@ class CodeGenerator:
         if func.args.kwarg:
             starargs.append(func.args.kwarg.arg)
 
-        graph = pyassem.PyFlowGraph(
+        graph = cls.flow_graph(
             name, filename,
             args=args, kwonlyargs=kwonlyargs, starargs=starargs,
-            optimized=1,
-            peephole_enabled=peephole_enabled
+            optimized=1
         )
 
         if not isLambda:
@@ -1981,15 +1981,21 @@ class CodeGenerator:
         return graph
 
     @classmethod
-    def make_code_gen(cls, name, tree, scopes, peephole_enabled):
-        graph = pyassem.PyFlowGraph(name, tree.filename, peephole_enabled=peephole_enabled)
+    def make_code_gen(cls, name, tree, scopes):
+        graph = cls.flow_graph(name, tree.filename)
         return cls(tree, scopes, graph = graph)
 
 
-def compile_module(tree, peephole_enabled):
+class CodeGeneratorNoPeephole(CodeGenerator):
+    @classmethod
+    def flow_graph(cls, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None):
+        return pyassem.PyFlowGraph(name, filename, args, kwonlyargs, starargs, optimized, klass, peephole_enabled=False)
+
+
+def compile_module(tree, generator=CodeGenerator):
     s = symbols.SymbolVisitor()
     walk(tree, s)
-    gen = CodeGenerator.make_code_gen("<module>", tree, s.scopes, peephole_enabled)
+    gen = generator.make_code_gen("<module>", tree, s.scopes)
     walk(tree, gen)
     return gen
 

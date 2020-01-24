@@ -8,6 +8,7 @@ from .common import CompilerTest
 from types import CodeType
 import compiler.pycodegen
 import ast
+from compiler.pycodegen import CodeGeneratorNoPeephole
 
 
 class PeepHoleTests(CompilerTest):
@@ -65,8 +66,8 @@ class PeepHoleTests(CompilerTest):
     class PeepholeRunner:
         def __init__(self, test, code):
             self.test = test
-            self.opt = test.run_code(code, True)
-            self.notopt = test.run_code(code, False)
+            self.opt = test.run_code(code)
+            self.notopt = test.run_code(code, CodeGeneratorNoPeephole)
 
         def __getitem__(self, func):
             return PeepHoleTests.PeepholeComparer(self.test, self.opt[func], self.notopt[func])
@@ -79,7 +80,7 @@ class PeepHoleTests(CompilerTest):
 
     #class PeepholeCompiler()
     def peephole_compile(self, code):
-        return PeepHoleTests.PeepholeComparer(self, self.compile(code, True), self.compile(code, False))
+        return PeepHoleTests.PeepholeComparer(self, self.compile(code), self.compile(code, CodeGeneratorNoPeephole))
 
     def test_unot(self):
         source = """

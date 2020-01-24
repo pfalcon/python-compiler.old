@@ -277,7 +277,7 @@ DONE = "DONE"
 class PyFlowGraph(FlowGraph):
     super_init = FlowGraph.__init__
 
-    def __init__(self, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None, peephole_enabled = False):
+    def __init__(self, name, filename, args=(), kwonlyargs=(), starargs=(), optimized=0, klass=None, peephole_enabled=True):
         self.super_init()
         self.name = name
         self.filename = filename
