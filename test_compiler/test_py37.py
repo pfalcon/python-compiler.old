@@ -154,6 +154,30 @@ class Python37Tests(CompilerTest):
         graph = self.to_graph('x = -1', CodeGenerator)
         self.assertInGraph(graph, 'UNARY_NEGATIVE')
 
+    def test_opt_debug(self):
+        graph = self.to_graph('if not __debug__:\n    x = 42', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'STORE_NAME')
+
+        graph = self.to_graph('if not __debug__:\n    x = 42', CodeGenerator)
+        self.assertInGraph(graph, 'STORE_NAME')
+
+    def test_opt_debug_del(self):
+        code = 'def f(): del __debug__'
+        outer_graph = self.to_graph(code, Python37CodeGenerator)
+        for outer_instr in self.graph_to_instrs(outer_graph):
+            if outer_instr.opname == "LOAD_CONST" and isinstance(outer_instr.oparg, CodeGenerator):
+                graph = outer_instr.oparg.graph
+                self.assertInGraph(graph, 'LOAD_CONST', True)
+                self.assertNotInGraph(graph, 'DELETE_FAST', '__debug__')
+
+        outer_graph = self.to_graph(code, CodeGenerator)
+        for outer_instr in self.graph_to_instrs(outer_graph):
+            if outer_instr.opname == "LOAD_CONST" and isinstance(outer_instr.oparg, CodeGenerator):
+                graph = outer_instr.oparg.graph
+                self.assertNotInGraph(graph, 'LOAD_CONST', True)
+                self.assertInGraph(graph, 'DELETE_FAST', '__debug__')
+
+
     def test_ast_optimizer(self):
         cases = [
             ("+1", "1"),

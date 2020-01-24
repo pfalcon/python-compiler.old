@@ -58,6 +58,10 @@ class CompilerTest(BytecodeTestCase):
         graph.dump(io)
         return io.getvalue()
 
+    def graph_to_instrs(self, graph):
+        for block in graph.getBlocks():
+            yield from block.getInstructions()
+
     def assertNotInGraph(self, graph, opname, argval=_UNSPECIFIED):
         for block in graph.getBlocks():
             for instr in block.getInstructions():

@@ -60,6 +60,10 @@ BIN_OPS = {
 
 
 class AstOptimizer(ASTRewriter):
+    def __init__(self, optimize = False):
+        super().__init__()
+        self.optimize = optimize
+
     def visitUnaryOp(self, node: ast.UnaryOp) -> ast.expr:
         op = self.visit(node.operand)
         if is_const(op):
@@ -180,3 +184,9 @@ class AstOptimizer(ASTRewriter):
                 comparators[-1] = new_iter
 
         return self.update_node(node, left=left, comparators=comparators)
+
+    def visitName(self, node: ast.Name):
+        if node.id == "__debug__":
+            return copy_location(Constant(not self.optimize), node)
+
+        return self.generic_visit(node)
