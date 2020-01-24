@@ -112,3 +112,22 @@ class AstOptimizer(ASTRewriter):
                 return copy_location(res, node)
 
         return self.update_node(node, elts=elts)
+
+    def visitSubscript(self, node: ast.Subscript) -> ast.expr:
+        value = self.visit(node.value)
+        slice = self.visit(node.slice)
+
+        if (
+            isinstance(node.ctx, ast.Load)
+            and is_const(value)
+            and isinstance(slice, ast.Index)
+            and is_const(slice.value)
+        ):
+            try:
+                return copy_location(
+                    Constant(get_const_value(value)[get_const_value(slice.value)]), node
+                )
+            except:
+                pass
+
+        return self.update_node(node, value=value, slice=slice)

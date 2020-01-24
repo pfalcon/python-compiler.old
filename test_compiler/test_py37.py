@@ -191,6 +191,10 @@ class Python37Tests(CompilerTest):
             ("(1, 2)", "(1, 2)"),
             ("(1, 2) * 2", "(1, 2, 1, 2)"),
             ("(1, --2, abc)", "(1, 2, abc)"),
+            ("(1, 2)[0]", "1"),
+            ("1[0]", "1[0]"),
+            ("x[+1]", "x[1]"),
+            ("(+1)[x]", "1[x]"),
         ]
         for inp, expected in cases:
             optimizer = AstOptimizer()
