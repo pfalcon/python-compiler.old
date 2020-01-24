@@ -28,7 +28,7 @@ class GraphTests(CompilerTest):
             self.assert_graph_equal_worker(first_block, expected)
         except AssertionError as e:
             raise AssertionError(
-                e.args[0] + "\nGraph was: " + self.format_graph(compiled)
+                e.args[0] + "\nGraph was: " + self.format_graph(first_block)
             ) from None
 
     def assert_graph_equal_worker(self, compiled, expected):

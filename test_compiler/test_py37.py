@@ -1,6 +1,6 @@
 import dis
 from .common import CompilerTest
-from compiler.pycodegen import Python37CodeGenerator
+from compiler.pycodegen import CodeGenerator, Python37CodeGenerator
 from compiler.consts import (
     CO_OPTIMIZED,
     CO_NOFREE,
@@ -63,3 +63,59 @@ class Python37Tests(CompilerTest):
             code.co_flags,
             CO_NOFREE |  CO_FUTURE_ANNOTATIONS,
         )
+
+    def test_compile_opt_unary_jump(self):
+        graph = self.to_graph('if not abc: foo', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'POP_JUMP_IF_FALSE')
+
+        graph = self.to_graph('if not abc: foo', CodeGenerator)
+        self.assertInGraph(graph, 'POP_JUMP_IF_FALSE')
+
+    def test_compile_opt_bool_or_jump(self):
+        graph = self.to_graph('if abc or bar: foo', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'JUMP_IF_TRUE_OR_POP')
+
+        graph = self.to_graph('if abc or bar: foo', CodeGenerator)
+        self.assertInGraph(graph, 'JUMP_IF_TRUE_OR_POP')
+
+    def test_compile_opt_bool_and_jump(self):
+        graph = self.to_graph('if abc and bar: foo', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'JUMP_IF_FALSE_OR_POP')
+
+        graph = self.to_graph('if abc and bar: foo', CodeGenerator)
+        self.assertInGraph(graph, 'JUMP_IF_FALSE_OR_POP')
+
+    def test_compile_opt_assert_or_bool(self):
+        graph = self.to_graph('assert abc or bar', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'JUMP_IF_TRUE_OR_POP')
+
+        graph = self.to_graph('assert abc or bar', CodeGenerator)
+        self.assertInGraph(graph, 'JUMP_IF_TRUE_OR_POP')
+
+    def test_compile_opt_assert_and_bool(self):
+        graph = self.to_graph('assert abc and bar', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'JUMP_IF_FALSE_OR_POP')
+
+        graph = self.to_graph('assert abc and bar', CodeGenerator)
+        self.assertInGraph(graph, 'JUMP_IF_FALSE_OR_POP')
+
+    def test_compile_opt_if_exp(self):
+        graph = self.to_graph('assert not a if c else b', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'UNARY_NOT')
+
+        graph = self.to_graph('assert not a if c else b', CodeGenerator)
+        self.assertInGraph(graph, 'UNARY_NOT')
+
+    def test_compile_opt_cmp_op(self):
+        graph = self.to_graph('assert not a > b', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'UNARY_NOT')
+
+        graph = self.to_graph('assert not a > b', CodeGenerator)
+        self.assertInGraph(graph, 'UNARY_NOT')
+
+    def test_compile_opt_chained_cmp_op(self):
+        graph = self.to_graph('assert not a > b > c', Python37CodeGenerator)
+        self.assertNotInGraph(graph, 'UNARY_NOT')
+
+        graph = self.to_graph('assert not a > b > c', CodeGenerator)
+        self.assertInGraph(graph, 'UNARY_NOT')

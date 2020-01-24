@@ -355,16 +355,19 @@ class PyFlowGraph(FlowGraph):
             save = sys.stdout
             sys.stdout = io
         pc = 0
-        for t in self.insts:
-            opname = t[0]
-            if opname == "SET_LINENO":
-                print()
-            if len(t) == 1:
-                print("\t", "%3d" % pc, opname)
-                pc = pc + 1
-            else:
-                print("\t", "%3d" % pc, opname, t[1])
-                pc = pc + 3
+        for block in self.getBlocks():
+            print(repr(block))
+            for instr in block.getInstructions():
+                opname = instr.opname
+                if opname == "SET_LINENO":
+                    continue
+                if instr.target is None:
+                    print("\t", "%3d" % pc, opname, instr.oparg)
+                elif instr.target.label:
+                    print("\t", f"{pc:3} {opname} {instr.target.bid} ({instr.target.label})")
+                else:
+                    print("\t", f"{pc:3} {opname} {instr.target.bid}")
+                pc += 2
         if io:
             sys.stdout = save
 

@@ -481,8 +481,7 @@ class CodeGenerator:
             orelse = self.newBlock("if_else")
 
         if test_const is None:
-            self.visit(test)
-            self.emit('POP_JUMP_IF_FALSE', orelse or end)
+            self.compileJumpIf(test, orelse or end, False)
 
         if test_const != False:
             self.nextBlock()
@@ -516,8 +515,7 @@ class CodeGenerator:
         self.setups.push((LOOP, loop))
 
         if test_const != True:
-            self.visit(node.test)
-            self.emit('POP_JUMP_IF_FALSE', else_ or after)
+            self.compileJumpIf(node.test, else_ or after, False)
 
         self.nextBlock(label='while_body')
         self.visit(node.body)
@@ -685,28 +683,34 @@ class CodeGenerator:
         ast.NotIn: "not in",
     }
 
+    def compileJumpIf(self, test, next, is_if_true):
+        self.visit(test)
+        self.emit('POP_JUMP_IF_TRUE' if is_if_true else 'POP_JUMP_IF_FALSE', next)
+
     def visitIfExp(self, node):
         endblock = self.newBlock()
         elseblock = self.newBlock()
-        self.visit(node.test)
-        self.emit('POP_JUMP_IF_FALSE', elseblock)
+        self.compileJumpIf(node.test, elseblock, False)
         self.visit(node.body)
         self.emit('JUMP_FORWARD', endblock)
         self.nextBlock(elseblock)
         self.visit(node.orelse)
         self.nextBlock(endblock)
 
+    def emitChainedCompareStep(self, op, value, cleanup, jump='JUMP_IF_FALSE_OR_POP'):
+        self.visit(value)
+        self.emit('DUP_TOP')
+        self.emit('ROT_THREE')
+        self.emit('COMPARE_OP', self._cmp_opcode[type(op)])
+        self.emit(jump, cleanup)
+        self.nextBlock(label='compare_or_cleanup')
+
     def visitCompare(self, node):
         self.update_lineno(node)
         self.visit(node.left)
         cleanup = self.newBlock('cleanup')
         for op, code in zip(node.ops[:-1], node.comparators[:-1]):
-            self.visit(code)
-            self.emit('DUP_TOP')
-            self.emit('ROT_THREE')
-            self.emit('COMPARE_OP', self._cmp_opcode[type(op)])
-            self.emit('JUMP_IF_FALSE_OR_POP', cleanup)
-            self.nextBlock(label='compare_or_cleanup')
+            self.emitChainedCompareStep(op, code, cleanup)
         # now do the last comparison
         if node.ops:
             op = node.ops[-1]
@@ -861,8 +865,7 @@ class CodeGenerator:
 
         self.nextBlock(after_try)
         for if_ in gen.ifs:
-            self.visit(if_)
-            self.emit('POP_JUMP_IF_FALSE', if_cleanup)
+            self.compileJumpIf(if_, if_cleanup, False)
             self.newBlock()
 
         gen_index += 1
@@ -914,8 +917,7 @@ class CodeGenerator:
         self.visit(gen.target)
 
         for if_ in gen.ifs:
-            self.visit(if_)
-            self.emit('POP_JUMP_IF_FALSE', if_cleanup)
+            self.compileJumpIf(if_, if_cleanup, False)
             self.newBlock()
 
         gen_index += 1
@@ -956,8 +958,8 @@ class CodeGenerator:
             # loaded as a global even if there is a local name.  I guess this
             # is a sort of renaming op.
             self.nextBlock()
-            self.visit(node.test)
-            self.emit('POP_JUMP_IF_TRUE', end)
+            self.compileJumpIf(node.test, end, True)
+
             self.nextBlock()
             self.emit('LOAD_GLOBAL', 'AssertionError')
             if node.msg:
@@ -1974,6 +1976,63 @@ class Python37CodeGenerator(CodeGenerator):
             self.emit('LOAD_CONST', to_expr(node))
         else:
             self.visit(node)
+
+    def compileJumpIf(self, test, next, is_if_true):
+        if isinstance(test, ast.UnaryOp):
+            if isinstance(test.op, ast.Not):
+                # Compile to remove not operation
+                self.compileJumpIf(test.operand, next, not is_if_true)
+                return
+        elif isinstance(test, ast.BoolOp):
+            is_or = isinstance(test.op, ast.Or)
+            skip_jump = next
+            if is_if_true != is_or:
+                skip_jump = self.newBlock()
+
+            for node in test.values[:-1]:
+                self.compileJumpIf(node, skip_jump, is_or)
+
+            self.compileJumpIf(test.values[-1], next, is_if_true)
+
+            if skip_jump is not next:
+                self.nextBlock(skip_jump)
+            return
+        elif isinstance(test, ast.IfExp):
+            end = self.newBlock('end')
+            orelse = self.newBlock('orelse')
+            # Jump directly to orelse if test matches
+            self.compileJumpIf(test.test, orelse, 0)
+            # Jump directly to target if test is true and body is matches
+            self.compileJumpIf(test.body, next, is_if_true)
+            self.emit('JUMP_FORWARD', end)
+            # Jump directly to target if test is true and orelse matches
+            self.nextBlock(orelse)
+            self.compileJumpIf(test.orelse, next, is_if_true)
+
+            self.nextBlock(end)
+            return
+        elif isinstance(test, ast.Compare):
+            if len(test.ops) > 1:
+                cleanup = self.newBlock()
+                self.visit(test.left)
+                for op, comparator in zip(test.ops[:-1], test.comparators[:-1]):
+                    self.emitChainedCompareStep(op, comparator, cleanup, "POP_JUMP_IF_FALSE")
+                self.visit(test.comparators[-1])
+                self.emit('COMPARE_OP', self._cmp_opcode[type(test.ops[-1])])
+                self.emit('POP_JUMP_IF_TRUE' if is_if_true else 'POP_JUMP_IF_FALSE', next)
+                end = self.newBlock()
+                self.emit('JUMP_FORWARD', end)
+                self.nextBlock(cleanup)
+                self.emit('POP_TOP')
+                if not is_if_true:
+                    self.emit('JUMP_FORWARD', next)
+                self.nextBlock(end)
+                return
+
+        self.visit(test)
+        self.emit('POP_JUMP_IF_TRUE' if is_if_true else 'POP_JUMP_IF_FALSE', next)
+        return True
+
 
 def get_default_generator():
     if sys.version_info >= (3, 7):
