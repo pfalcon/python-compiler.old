@@ -14,7 +14,9 @@ from compiler.consts import SC_LOCAL, SC_GLOBAL_IMPLICIT, SC_GLOBAL_EXPLICIT, \
 from compiler.consts import (CO_VARARGS, CO_VARKEYWORDS, CO_NEWLOCALS,
      CO_NESTED, CO_GENERATOR, CO_FUTURE_DIVISION,
      CO_FUTURE_ABSIMPORT, CO_FUTURE_WITH_STATEMENT, CO_FUTURE_PRINT_FUNCTION,
-     CO_COROUTINE, CO_ASYNC_GENERATOR, CO_FUTURE_BARRY_AS_BDFL, CO_FUTURE_GENERATOR_STOP)
+     CO_COROUTINE, CO_ASYNC_GENERATOR, CO_FUTURE_BARRY_AS_BDFL, CO_FUTURE_GENERATOR_STOP,
+     CO_FUTURE_ANNOTATIONS)
+from compiler.unparse import to_expr
 from .visitor import ASTVisitor
 
 from . import config
@@ -265,16 +267,18 @@ class CodeGenerator:
         self.emit('LOAD_CONST', None)
         self.emit('RETURN_VALUE')
 
-    def visitModule(self, node):
+    def findFutures(self, node):
         future_flags = 0
         for feature in future.find_futures(node):
             if feature == "generator_stop":
                 future_flags |= CO_FUTURE_GENERATOR_STOP
             elif feature == "barry_as_FLUFL":
                 future_flags |= CO_FUTURE_BARRY_AS_BDFL
+        return future_flags
 
-        self.future_flags = future_flags
-        self.graph.setFlag(future_flags)
+    def visitModule(self, node):
+        self.future_flags = self.findFutures(node)
+        self.graph.setFlag(self.future_flags)
 
         if node.body:
             self.set_lineno(node.body[0])
@@ -349,6 +353,9 @@ class CodeGenerator:
         else:
             gen.visit(body)
 
+    def _visitAnnotation(self, node):
+        return self.visit(node)
+
     def _visitFuncOrLambda(self, node, isLambda=0):
         if not isLambda and node.decorator_list:
             for decorator in node.decorator_list:
@@ -387,23 +394,23 @@ class CodeGenerator:
         ann_num = 0
         for arg in node.args.args:
             if arg.annotation:
-                self.visit(arg.annotation)
+                self._visitAnnotation(arg.annotation)
                 ann_args.append(self.mangle(arg.arg))
         if node.args.vararg:
             if node.args.vararg.annotation:
-                self.visit(node.args.vararg.annotation)
+                self._visitAnnotation(node.args.vararg.annotation)
                 ann_args.append(self.mangle(node.args.vararg.arg))
         for arg in node.args.kwonlyargs:
             if arg.annotation:
-                self.visit(arg.annotation)
+                self._visitAnnotation(arg.annotation)
                 ann_args.append(self.mangle(arg.arg))
         if node.args.kwarg:
             if node.args.kwarg.annotation:
-                self.visit(node.args.kwarg.annotation)
+                self._visitAnnotation(node.args.kwarg.annotation)
                 ann_args.append(self.mangle(node.args.kwarg.arg))
         # Cannot annotate return type for lambda
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns:
-            self.visit(node.returns)
+            self._visitAnnotation(node.returns)
             ann_args.append("return")
         if ann_args:
             flags |= 0x04
@@ -1299,7 +1306,7 @@ class CodeGenerator:
                 self.visit(elt)
 
     def checkAnnExpr(self, node):
-        self.visit(node)
+        self._visitAnnotation(node)
         self.emit('POP_TOP')
 
     def checkAnnSlice(self, node):
@@ -1349,7 +1356,7 @@ class CodeGenerator:
             # If we have a simple name in a module or class, store the annotation
             if node.simple and isinstance(self.tree, (ast.Module, ast.ClassDef)):
                 assert self.did_setup_annotations
-                self.visit(node.annotation)
+                self._visitAnnotation(node.annotation)
                 mangled = self.mangle(node.target.id)
                 self.emit('STORE_ANNOTATION', mangled)
         elif isinstance(node.target, ast.Attribute):
@@ -1952,6 +1959,22 @@ class Python37CodeGenerator(CodeGenerator):
         for arg in node.args:
             self.visit(arg)
         self.emit('CALL_METHOD', len(node.args))
+
+    def findFutures(self, node):
+        future_flags = 0
+        for feature in future.find_futures(node):
+            if feature == "barry_as_FLUFL":
+                future_flags |= CO_FUTURE_BARRY_AS_BDFL
+            elif feature == "annotations":
+                future_flags |= CO_FUTURE_ANNOTATIONS
+        return future_flags
+
+    def _visitAnnotation(self, node):
+        if self.module.future_flags & CO_FUTURE_ANNOTATIONS:
+            self.emit('LOAD_CONST', to_expr(node))
+        else:
+            self.visit(node)
+
 
 
 def get_docstring(node):

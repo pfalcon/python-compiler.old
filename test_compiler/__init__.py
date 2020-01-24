@@ -7,3 +7,4 @@ from .test_flags import FlagTests
 from .test_graph import GraphTests
 from .test_sbs_stdlib import SbsCompileTests
 from .test_symbols import SymbolVisitorTests
+from .test_unparse import UnparseTests

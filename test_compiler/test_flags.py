@@ -4,6 +4,7 @@ from .common import CompilerTest
 import dis
 from dis import opmap, opname
 import ast
+import sys
 from compiler.consts import (
     CO_OPTIMIZED,
     CO_NOFREE,
@@ -32,10 +33,10 @@ class FlagTests(CompilerTest):
         from __future__ import generator_stop
         def f(): pass"""
         )["f"]
-        self.assertEqual(
-            f.__code__.co_flags,
-            CO_FUTURE_GENERATOR_STOP | CO_NOFREE | CO_OPTIMIZED | CO_NEWLOCALS,
-        )
+        expected = CO_FUTURE_GENERATOR_STOP | CO_NOFREE | CO_OPTIMIZED | CO_NEWLOCALS
+        if sys.version_info >= (3, 7):
+            expected &= ~CO_FUTURE_GENERATOR_STOP
+        self.assertEqual(f.__code__.co_flags, expected)
 
     def test_future_barry_as_bdfl(self):
         f = self.run_code(

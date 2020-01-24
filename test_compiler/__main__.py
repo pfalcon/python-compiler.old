@@ -8,6 +8,7 @@ from .test_py37 import Python37Tests
 from .test_sbs_stdlib import SbsCompileTests
 from .test_errors import ErrorTests, ErrorTestsBuiltin
 from .test_symbols import SymbolVisitorTests
+from .test_unparse import UnparseTests
 
 if __name__ == "__main__":
     unittest.main()
