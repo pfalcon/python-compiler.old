@@ -97,10 +97,11 @@ UNARY_OPS = {
     UNARY_POSITIVE: lambda v: +v,
 }
 
-MAX_INT_SIZE = 128
-MAX_COLLECTION_SIZE = 20
-MAX_STR_SIZE = 20
-MAX_TOTAL_ITEMS = 1024
+class DefaultLimits:
+    MAX_INT_SIZE = 128
+    MAX_COLLECTION_SIZE = 20
+    MAX_STR_SIZE = 20
+    MAX_TOTAL_ITEMS = 1024
 
 
 def check_complexity(obj, limit):
@@ -114,51 +115,51 @@ def check_complexity(obj, limit):
     return limit
 
 
-def safe_multiply(l, r):
+def safe_multiply(l, r, limits=DefaultLimits):
     if isinstance(l, int) and isinstance(r, int) and l and r:
         lbits = l.bit_length()
         rbits = r.bit_length()
-        if lbits + rbits > MAX_INT_SIZE:
+        if lbits + rbits > limits.MAX_INT_SIZE:
             raise OverflowError()
     elif isinstance(l, int) and isinstance(r, (tuple, frozenset)):
         rsize = len(r)
         if rsize:
-            if l < 0 or l > MAX_COLLECTION_SIZE / rsize:
+            if l < 0 or l > limits.MAX_COLLECTION_SIZE / rsize:
                 raise OverflowError()
             if l:
-                if check_complexity(r, MAX_TOTAL_ITEMS / l) < 0:
+                if check_complexity(r, limits.MAX_TOTAL_ITEMS / l) < 0:
                     raise OverflowError()
     elif isinstance(l, int) and isinstance(r, (str, bytes)):
         rsize = len(r)
         if rsize:
-            if l < 0 or l > MAX_STR_SIZE / rsize:
+            if l < 0 or l > limits.MAX_STR_SIZE / rsize:
                 raise OverflowError()
     elif isinstance(r, int) and isinstance(l, (tuple, frozenset, str, bytes)):
-        return safe_multiply(r, l)
+        return safe_multiply(r, l, limits)
 
     return l * r
 
 
-def safe_power(l, r):
+def safe_power(l, r, limits=DefaultLimits):
     if isinstance(l, int) and isinstance(r, int) and l and r > 0:
         lbits = l.bit_length()
-        if lbits > MAX_INT_SIZE / r:
+        if lbits > limits.MAX_INT_SIZE / r:
             raise OverflowError()
 
     return l ** r
 
 
-def safe_mod(l, r):
+def safe_mod(l, r, limits=DefaultLimits):
     if isinstance(l, (str, bytes)):
         raise OverflowError()
 
     return l % r
 
 
-def safe_lshift(l, r):
+def safe_lshift(l, r, limits=DefaultLimits):
     if isinstance(l, int) and isinstance(r, int) and l and r:
         lbits = l.bit_length()
-        if r < 0 or r > MAX_INT_SIZE or lbits > MAX_INT_SIZE - r:
+        if r < 0 or r > limits.MAX_INT_SIZE or lbits > limits.MAX_INT_SIZE - r:
             raise OverflowError()
 
     return l << r
