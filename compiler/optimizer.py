@@ -1,6 +1,7 @@
 import ast
 import operator
 from ast import Constant, Num, Str, Bytes, Ellipsis, NameConstant, copy_location
+from typing import Iterable, Optional
 from compiler.peephole import safe_multiply, safe_power, safe_mod, safe_lshift
 from compiler.visitor import ASTRewriter
 
@@ -95,3 +96,19 @@ class AstOptimizer(ASTRewriter):
                     pass
 
         return self.update_node(node, left=l, right=r)
+
+    def makeConstTuple(self, elts: Iterable[ast.expr]) -> Optional[Constant]:
+        if all(is_const(elt) for elt in elts):
+            return Constant(tuple(get_const_value(elt) for elt in elts))
+
+        return None
+
+    def visitTuple(self, node: ast.Tuple) -> ast.expr:
+        elts = self.walk_list(node.elts)
+
+        if isinstance(node.ctx, ast.Load):
+            res = self.makeConstTuple(elts)
+            if res is not None:
+                return copy_location(res, node)
+
+        return self.update_node(node, elts=elts)

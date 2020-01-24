@@ -188,6 +188,9 @@ class Python37Tests(CompilerTest):
             ("1 + None", "1 + None"),
             ("True + None", "True + None"),
             ("True + 1", "2"),
+            ("(1, 2)", "(1, 2)"),
+            ("(1, 2) * 2", "(1, 2, 1, 2)"),
+            ("(1, --2, abc)", "(1, 2, abc)"),
         ]
         for inp, expected in cases:
             optimizer = AstOptimizer()
