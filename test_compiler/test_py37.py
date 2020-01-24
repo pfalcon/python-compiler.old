@@ -1,6 +1,9 @@
+import ast
 import dis
 from .common import CompilerTest
 from compiler.pycodegen import CodeGenerator, Python37CodeGenerator
+from compiler.optimizer import AstOptimizer
+from compiler.unparse import to_expr
 from compiler.consts import (
     CO_OPTIMIZED,
     CO_NOFREE,
@@ -143,3 +146,21 @@ class Python37Tests(CompilerTest):
 
         graph = self.to_graph('assert not a > b > c', CodeGenerator)
         self.assertInGraph(graph, 'UNARY_NOT')
+
+    def test_ast_optimizer(self):
+        cases = [
+            ("+1", "1"),
+            ("--1", "1"),
+            ("~1", "-2"),
+            ("not 1", "False"),
+            ("not x is y", "x is not y"),
+            ("not x is not y", "x is y"),
+            ("not x in y", "x not in y"),
+            ("~1.1", "~1.1"),
+            ("+'str'", "+'str'"),
+        ]
+        for inp, expected in cases:
+            optimizer = AstOptimizer()
+            tree = ast.parse(inp)
+            optimized = to_expr(optimizer.visit(tree).body[0].value)
+            self.assertEqual(expected, optimized, "Input was: " + inp)

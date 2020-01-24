@@ -90,6 +90,8 @@ def get_bool_const(node):
     if isinstance(node, ast.Name):
         if node.id == "__debug__":
             return not OPTIMIZE
+    if isinstance(node, ast.Constant):
+        return bool(node.value)
 
 
 def is_constant_false(node):
@@ -2058,6 +2060,10 @@ class Python37CodeGenerator(CodeGenerator):
         self.visit(test)
         self.emit('POP_JUMP_IF_TRUE' if is_if_true else 'POP_JUMP_IF_FALSE', next)
         return True
+
+    def visitConstant(self, node: ast.Constant):
+        self.update_lineno(node)
+        self.emit('LOAD_CONST', node.value)
 
 
 def get_default_generator():
