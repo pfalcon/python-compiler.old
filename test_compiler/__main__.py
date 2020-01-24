@@ -9,6 +9,7 @@ from .test_sbs_stdlib import SbsCompileTests
 from .test_errors import ErrorTests, ErrorTestsBuiltin
 from .test_symbols import SymbolVisitorTests
 from .test_unparse import UnparseTests
+from .test_visitor import VisitorTests
 
 if __name__ == "__main__":
     unittest.main()

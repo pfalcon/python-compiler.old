@@ -8,3 +8,4 @@ from .test_graph import GraphTests
 from .test_sbs_stdlib import SbsCompileTests
 from .test_symbols import SymbolVisitorTests
 from .test_unparse import UnparseTests
+from .test_visitor import VisitorTests

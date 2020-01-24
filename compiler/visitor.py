@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import ast
+from ast import AST, copy_location
 from typing import Any, List
 
 # XXX should probably rename ASTVisitor to ASTWalker
@@ -61,6 +62,75 @@ class ASTVisitor:
 ##            else:
 ##                print "visit", className, (meth and meth.__name__ or '')
         return meth(node, *args)
+
+
+class ASTRewriter(ASTVisitor):
+    """performs rewrites on the AST, rewriting parent nodes when child nodes
+    are replaced."""
+
+    @staticmethod
+    def update_node(node: AST, **replacement: Any) -> AST:
+        res = node
+        for name, val in replacement.items():
+            existing = getattr(res, name)
+            if existing is val:
+                continue
+
+            if node is res:
+                res = ASTRewriter.clone_node(node)
+
+            setattr(res, name, val)
+        return res
+
+    @staticmethod
+    def clone_node(node: AST) -> AST:
+        attrs = []
+        for name in node._fields:
+            attr = getattr(node, name, None)
+            if isinstance(attr, list):
+                attr = list(attr)
+            attrs.append(attr)
+
+        new = type(node)(*attrs)
+        return copy_location(new, node)
+
+    def walk_list(self, old_values: List[AST]) -> List[AST]:
+        new_values = []
+        changed = False
+        for value in old_values:
+            if isinstance(value, AST):
+                new_value = self.visit(value)
+                changed |= new_value is not value
+                if new_value is None:
+                    continue
+                elif not isinstance(new_value, AST):
+                    new_values.extend(new_value)
+                    continue
+                value = new_value
+
+            new_values.append(value)
+        return new_values if changed else old_values
+
+    def generic_visit(self, node: AST, *args) -> AST:
+        if isinstance(node, list):
+            return self.walk_list(node)
+
+        ret_node = node
+        for field, old_value in ast.iter_fields(node):
+            if not isinstance(old_value, (AST, list)):
+                continue
+
+            new_node = self.visit(old_value)
+            assert (  # noqa: IG01
+                new_node is not None
+            ), "can't remove AST nodes that aren't part of a list"
+            if new_node is not old_value:
+                if ret_node is node:
+                    ret_node = self.clone_node(node)
+
+                setattr(ret_node, field, new_node)
+
+        return ret_node
 
 
 class ExampleASTVisitor(ASTVisitor):
