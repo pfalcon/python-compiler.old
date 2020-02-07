@@ -1,4 +1,6 @@
 import ast
+from ast import FunctionDef
+from compiler.consts import SC_GLOBAL_IMPLICIT
 from compiler.symbols import SymbolVisitor
 from compiler import walk
 from .common import CompilerTest
@@ -39,6 +41,36 @@ class SymbolVisitorTests(CompilerTest):
             gen = module.body[0].value
             self.assertIn("foo", visitor.scopes[gen].defs)
 
+    def test_class_kwarg_in_nested_scope(self):
+        code = '''def f():
+            def g():
+                class C(x=foo):
+                    pass'''
+        module = ast.parse(code)
+        visitor = SymbolVisitor()
+        walk(module, visitor)
+        for node, scope in visitor.scopes.items():
+            if isinstance(node, FunctionDef) and node.name == "f":
+                self.assertEqual(scope.check_name('foo'), SC_GLOBAL_IMPLICIT)
+                break
+        else:
+            self.fail('scope not found')
+
+    def test_class_annotation_in_nested_scope(self):
+        code = '''def f():
+            def g():
+                @foo
+                class C:
+                    pass'''
+        module = ast.parse(code)
+        visitor = SymbolVisitor()
+        walk(module, visitor)
+        for node, scope in visitor.scopes.items():
+            if isinstance(node, FunctionDef) and node.name == "f":
+                self.assertEqual(scope.check_name('foo'), SC_GLOBAL_IMPLICIT)
+                break
+        else:
+            self.fail('scope not found')
 
 if __name__ == "__main__":
     unittest.main()

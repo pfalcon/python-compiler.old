@@ -433,6 +433,11 @@ class SymbolVisitor(ASTVisitor):
         scope.handle_children()
 
     def visitClassDef(self, node, parent):
+        if node.decorator_list:
+            self.visit(node.decorator_list, parent)
+        for kw in node.keywords:
+            self.visit(kw.value, parent)
+
         parent.add_def(node.name)
         for n in node.bases:
             self.visit(n, parent)
