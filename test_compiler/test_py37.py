@@ -229,6 +229,16 @@ class Python37Tests(CompilerTest):
         self.assertEqual(math.copysign(1, code.co_consts[0][0]), 1)
         self.assertEqual(math.copysign(1, code.co_consts[1][0]), -1)
 
+    def test_const_fold(self):
+        code = '{' + '**{}, '*256 + '}'
+        graph = self.to_graph(code, Python37CodeGenerator)
+        self.assertInGraph(graph, 'BUILD_MAP_UNPACK', 256)
+
+        code = '{' + '**{}, '*256 + '}'
+        graph = self.to_graph(code, CodeGenerator)
+        self.assertInGraph(graph, 'BUILD_MAP_UNPACK', 255)
+        self.assertInGraph(graph, 'BUILD_MAP_UNPACK', 2)
+
     def test_ast_optimizer(self):
         cases = [
             ("+1", "1"),

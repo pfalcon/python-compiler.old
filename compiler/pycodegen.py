@@ -1832,6 +1832,9 @@ class CodeGenerator(ASTVisitor):
             self.compile_subdict(node, len(node.keys) - elements, len(node.keys))
             containers += 1
 
+        self.emitMapUnpack(containers, is_unpacking)
+
+    def emitMapUnpack(self, containers, is_unpacking):
         while containers > 1 or is_unpacking:
             oparg = min(containers, 255)
             self.emit('BUILD_MAP_UNPACK', oparg)
@@ -2111,6 +2114,11 @@ class Python37CodeGenerator(CodeGenerator):
         if except_protect:
             self.emit('POP_EXCEPT')
         self.setups.pop()
+
+    def emitMapUnpack(self, containers, is_unpacking):
+        if containers > 1 or is_unpacking:
+            self.emit('BUILD_MAP_UNPACK', containers)
+
 
 def get_default_generator():
     if sys.version_info >= (3, 7):
