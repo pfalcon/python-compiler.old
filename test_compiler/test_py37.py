@@ -1,5 +1,6 @@
 import ast
 import dis
+import math
 from .common import CompilerTest
 from compiler.pyassem import PyFlowGraph
 from compiler.pycodegen import CodeGenerator, Python37CodeGenerator
@@ -200,6 +201,17 @@ class Python37Tests(CompilerTest):
                 self.assertNotInGraph(graph, 'LOAD_CONST', True)
                 self.assertInGraph(graph, 'DELETE_FAST', '__debug__')
 
+    def test_const_fold(self):
+        code = self.compile('x = 0.0\ny=-0.0', Python37CodeGenerator)
+        self.assertEqual(code.co_consts, (0.0, -0.0, None))
+        self.assertEqual(math.copysign(1, code.co_consts[0]), 1)
+        self.assertEqual(math.copysign(1, code.co_consts[1]), -1)
+
+    def test_const_fold_tuple(self):
+        code = self.compile('x = (0.0, )\ny=(-0.0, )', Python37CodeGenerator)
+        self.assertEqual(code.co_consts, ((0.0, ), (-0.0, ), None))
+        self.assertEqual(math.copysign(1, code.co_consts[0][0]), 1)
+        self.assertEqual(math.copysign(1, code.co_consts[1][0]), -1)
 
     def test_ast_optimizer(self):
         cases = [

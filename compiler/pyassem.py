@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 import dis
+import math
 import types
 import sys
 
@@ -496,12 +497,12 @@ class PyFlowGraph(FlowGraph):
         # manner, e.g. lambdas and comprehensions don't have docstrings,
         # classes store them as __doc__ attribute.
         if self.name == "<lambda>":
-            self.consts[type(None), None] = 0
+            self.consts[self.get_const_key(None)] = 0
         elif not self.name.startswith("<") and not self.klass:
             if self.docstring is not None:
-                self.consts[str, self.docstring] = 0
+                self.consts[self.get_const_key(self.docstring)] = 0
             else:
-                self.consts[type(None), None] = 0
+                self.consts[self.get_const_key(None)] = 0
         self.sort_cellvars()
 
         for b in self.getBlocksInOrder():
@@ -536,14 +537,21 @@ class PyFlowGraph(FlowGraph):
     def _convert_LOAD_CONST(self, arg):
         if hasattr(arg, 'getCode'):
             arg = arg.getCode()
-            # TODO: Probably need to deal w/ +/- 0.0, and complex, and
-            # tuples/frozen sets of these items: See _PyCode_ConstantKey.
-            # But this matches _lookupName T52799029
-        key = (type(arg), arg)
+        key = self.get_const_key(arg)
         res = self.consts.get(key, self)
         if res is self:
             res = self.consts[key] = len(self.consts)
         return res
+
+    def get_const_key(self, value):
+        if isinstance(value, float):
+            return type(value), value, math.copysign(1, value)
+        elif isinstance(value, complex):
+            return type(value), value, math.copysign(1, value.real), math.copysign(1, value.imag)
+        elif isinstance(value, (tuple, frozenset)):
+            return type(value), value, tuple(self.get_const_key(const) for const in value)
+
+        return type(value), value
 
     def _convert_LOAD_FAST(self, arg):
         return self._lookupName(arg, self.varnames)
