@@ -84,6 +84,22 @@ class Python37Tests(CompilerTest):
                             saw_aiter = True
                     break
 
+    def test_try_except_pop_except(self):
+        """POP_EXCEPT moved after END_FINALLY in Python 3.7"""
+        for generator in (Python37CodeGenerator, CodeGenerator):
+            graph = self.to_graph("""
+                try:
+                    pass
+                except Exception as e:
+                    pass
+            """, generator)
+            prev_instr = None
+            for instr in self.graph_to_instrs(graph):
+                if instr.opname == "POP_EXCEPT":
+                    self.assertEqual(prev_instr.opname == "END_FINALLY", generator is Python37CodeGenerator, prev_instr.opname)
+                prev_instr = instr
+
+
     def test_future_annotations(self):
         annotations = ["42"]
         for annotation in annotations:

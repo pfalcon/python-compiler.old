@@ -2091,6 +2091,26 @@ class Python37CodeGenerator(CodeGenerator):
 
         return super().visitAsyncWith(node)
 
+    def visitTryFinally(self, node, except_protect=False):
+        body = self.newBlock()
+        final = self.newBlock()
+        self.emit('SETUP_FINALLY', final)
+        self.nextBlock(body)
+        self.setups.push((TRY_FINALLY, body))
+        if node.handlers:
+            self.visitTryExcept(node)
+        else:
+            self.visit(node.body)
+        self.emit('POP_BLOCK')
+        self.setups.pop()
+        self.emit('LOAD_CONST', None)
+        self.nextBlock(final)
+        self.setups.push((END_FINALLY, final))
+        self.visit(node.finalbody)
+        self.emit('END_FINALLY')
+        if except_protect:
+            self.emit('POP_EXCEPT')
+        self.setups.pop()
 
 def get_default_generator():
     if sys.version_info >= (3, 7):
