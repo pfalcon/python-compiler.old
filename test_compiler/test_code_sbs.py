@@ -3,6 +3,7 @@ from collections import deque
 from functools import partial
 from re import escape
 import dis
+import sys
 from functools import partial
 from io import SEEK_END
 from .common import CompilerTest, glob_test
@@ -252,6 +253,10 @@ class CodeTests(CompilerTest):
 
 
 def add_test(modname, fname):
+    if "/3.6/" in fname and sys.version_info[:2] != (3, 6):
+        return
+    elif "/3.7/" in fname and sys.version_info[:2] != (3, 7):
+        return
     def test_code(self):
         with open(fname) as f:
             test = f.read()

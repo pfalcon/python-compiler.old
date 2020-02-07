@@ -27,8 +27,6 @@ class Foo:
     CODE_START('__init__'),
     LOAD_GLOBAL('super'),
     CALL_FUNCTION(0),
-    LOAD_ATTR('__init__'),
-    CALL_FUNCTION(0),
     ...,
     CODE_START('no_super'),
     ...,
