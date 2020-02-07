@@ -381,17 +381,17 @@ class PeepHoleTests(CompilerTest):
     def test_folding_of_tuples_of_constants(self):
         for line, elem in (
             ("a = 1,2,3", (1, 2, 3)),
-            ('("a","b","c")', ("a", "b", "c")),
+            ('a = ("a","b","c")', ("a", "b", "c")),
             ("a,b,c = 1,2,3", (1, 2, 3)),
-            ("(None, 1, None)", (None, 1, None)),
-            ("((1, 2), 3, 4)", ((1, 2), 3, 4)),
+            ("a = (None, 1, None)", (None, 1, None)),
+            ("a = ((1, 2), 3, 4)", ((1, 2), 3, 4)),
         ):
             code = self.peephole_compile(line)
             code.assert_added("LOAD_CONST", elem)
             code.assert_removed("BUILD_TUPLE")
 
         # Long tuples should be folded too.
-        code = self.peephole_compile(repr(tuple(range(10000))))
+        code = self.peephole_compile("x=" + repr(tuple(range(10000))))
         code.assert_removed("BUILD_TUPLE")
         # One LOAD_CONST for the tuple, one for the None return value
         code.assert_instr_count("LOAD_CONST", 10001, 2)
@@ -547,7 +547,7 @@ class PeepHoleTests(CompilerTest):
     def test_folding_of_binops_on_constants(self):
         for line, elem in (
             ("a = 2+3+4", 9),  # chained fold
-            ('"@"*4', "@@@@"),  # check string ops
+            ('a = "@"*4', "@@@@"),  # check string ops
             ('a="abc" + "def"', "abcdef"),  # check string ops
             ("a = 3**4", 81),  # binary power
             ("a = 3*4", 12),  # binary multiply
@@ -585,31 +585,31 @@ class PeepHoleTests(CompilerTest):
 
     def test_binary_subscr_on_unicode(self):
         # valid code get optimized
-        code = self.peephole_compile('"foo"[0]')
+        code = self.peephole_compile('x = "foo"[0]')
         code.assert_added("LOAD_CONST", "f")
         code.assert_removed("BINARY_SUBSCR")
-        code = self.peephole_compile('"\u0061\uffff"[1]')
+        code = self.peephole_compile('x = "\u0061\uffff"[1]')
         code.assert_added("LOAD_CONST", "\uffff")
         code.assert_removed("BINARY_SUBSCR")
 
         # With PEP 393, non-BMP char get optimized
-        code = self.peephole_compile('"\U00012345"[0]')
+        code = self.peephole_compile('x = "\U00012345"[0]')
         code.assert_both("LOAD_CONST", "\U00012345")
         code.assert_removed("BINARY_SUBSCR")
 
         # invalid code doesn't get optimized
         # out of range
-        code = self.peephole_compile('"fuu"[10]')
+        code = self.peephole_compile('x = "fuu"[10]')
         code.assert_both("BINARY_SUBSCR")
 
     def test_folding_of_unaryops_on_constants(self):
         for line, elem in (
-            ("-0.5", -0.5),  # unary negative
-            ("-0.0", -0.0),  # -0.0
-            ("-(1.0-1.0)", -0.0),  # -0.0 after folding
-            ("-0", 0),  # -0
-            ("~-2", 1),  # unary invert
-            ("+1", 1),  # unary positive
+            ("x = -0.5", -0.5),  # unary negative
+            ("x = -0.0", -0.0),  # -0.0
+            ("x = -(1.0-1.0)", -0.0),  # -0.0 after folding
+            ("x = -0", 0),  # -0
+            ("x = ~-2", 1),  # unary invert
+            ("x = +1", 1),  # unary positive
         ):
             code = self.peephole_compile(line)
             # can't assert added here because -0/0 compares equal
