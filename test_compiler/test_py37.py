@@ -99,6 +99,21 @@ class Python37Tests(CompilerTest):
                     self.assertEqual(prev_instr.opname == "END_FINALLY", generator is Python37CodeGenerator, prev_instr.opname)
                 prev_instr = instr
 
+    def test_func_doc_str(self):
+        """POP_EXCEPT moved after END_FINALLY in Python 3.7"""
+        test_code = """
+            def f():
+
+                '''hello there
+
+                '''
+            """
+
+        py37_code = self.find_code(self.compile(test_code, Python37CodeGenerator))
+        self.assertEqual(py37_code.co_lnotab, b"\x00\x04")
+
+        py36_code = self.find_code(self.compile(test_code, CodeGenerator))
+        self.assertEqual(py36_code.co_lnotab, b"")
 
     def test_future_annotations(self):
         annotations = ["42"]

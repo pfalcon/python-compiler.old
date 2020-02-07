@@ -358,6 +358,8 @@ class CodeGenerator(ASTVisitor):
     def _visitAnnotation(self, node):
         return self.visit(node)
 
+    skip_func_docstring = skip_docstring
+
     def _visitFuncOrLambda(self, node, isLambda=0):
         if not isLambda and node.decorator_list:
             for decorator in node.decorator_list:
@@ -370,7 +372,7 @@ class CodeGenerator(ASTVisitor):
                                self.class_name, self.module)
         body = node.body
         if not isLambda:
-            body = self.skip_docstring(body)
+            body = self.skip_func_docstring(body)
 
         self.processBody(body, gen)
 
@@ -2114,6 +2116,9 @@ class Python37CodeGenerator(CodeGenerator):
         if except_protect:
             self.emit('POP_EXCEPT')
         self.setups.pop()
+
+    def skip_func_docstring(self, body):
+        return body
 
     def emitMapUnpack(self, containers, is_unpacking):
         if containers > 1 or is_unpacking:
