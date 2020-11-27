@@ -23,6 +23,15 @@ def open_with_coding(fname):
     return open(fname, encoding=encoding)
 
 
+def dis_recursive(code):
+    dis.dis(code)
+    for c in code.co_consts:
+        if hasattr(c, "co_code"):
+            print()
+            print("Disassembly of %r:" % c)
+            dis_recursive(c)
+
+
 argparser = argparse.ArgumentParser(
     prog="compiler",
     description="Compile/execute a Python3 source file",
@@ -48,7 +57,7 @@ gen.compile()
 codeobj = gen.getCode()
 
 if args.dis:
-    dis.dis(codeobj)
+    dis_recursive(codeobj)
 
 if args.c:
     name = args.o or args.input.rsplit(".", 1)[0] + ".pyc"
