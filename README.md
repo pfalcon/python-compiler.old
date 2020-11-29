@@ -57,7 +57,9 @@ is handled using builtin compile() function with suitable parameters.
 Usage
 -----
 
-Currently, the package is intended to work with CPython3.5 only.
+Currently, the package is intended to work with CPython3.5 only. If you
+don't have this version handy, you can easily build a binary with a script
+supplied in this repository, see the next section.
 
 ```
 python3.5 -m compiler --help
