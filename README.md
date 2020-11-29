@@ -76,7 +76,7 @@ Running Tests
 
 The projects includes a builtin test corpus of various syntactic constructs
 to verify codegeneration against reference output produced by CPython3.5.
-Currently, the project does not include peephole optimizer as included as
+Currently, the project does not include peephole optimizer, run as
 a postprocessing pass in CPython. This means that testing should happen
 against modified CPython3.5 build with the peephole optimizer disabled.
 
@@ -99,6 +99,27 @@ This needs to be done once. Afterwards, you can run
 
 to compare the output produced by this compiler package against the
 reference.
+
+Beyond the simple test corpus, the tests can be a applied to the compiler
+code itself:
+
+~~~
+./test_dogfeed.sh
+~~~
+
+Finally, the test can be run against the entire CPython3.5 standard library:
+
+~~~
+./test_stdlib_3.5_prepare.py
+./test_stdlib_3.5_run.py
+~~~
+
+(All files under Lib/ are tested. Those which don't represent valid Python3
+source files are explicitly excluded (there are such, to test CPython
+interpreter on them). Beyond that, there may be files excluded for which
+this compiler package doesn't produce the bytecode, matching the reference
+interpreter output. See the `test_stdlib_3.5_run.py` file for the up to date
+list.)
 
 Authorship and Licensing Info
 -----------------------------
