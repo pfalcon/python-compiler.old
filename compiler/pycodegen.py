@@ -254,9 +254,23 @@ class CodeGenerator:
     def delName(self, name):
         self._nameOp('DELETE', name)
 
+    def query_alt_name(self, name):
+        old_name = name
+        scp = self.scope
+        while isinstance(scp, symbols.BlockScope):
+            if name in scp.defs:
+                alt_name = scp.defs[name]
+                if isinstance(alt_name, str):
+                    name = alt_name
+                    break
+            scp = scp.parent
+#        print("query_alt_name: %s -> %s" % (old_name, name))
+        return name
+
     def _nameOp(self, prefix, name):
         name = self.mangle(name)
         scope = self.scope.check_name(name)
+        name = self.query_alt_name(name)
         if scope == SC_LOCAL:
             if not self.optimized:
                 self.emit(prefix + '_NAME', name)
@@ -533,6 +547,8 @@ class CodeGenerator:
         self.nextBlock(after)
 
     def visitFor(self, node):
+        prev_scope = self.scope
+        self.scope = self.scopes[node]
         start = self.newBlock()
         anchor = self.newBlock()
         after = self.newBlock()
@@ -554,6 +570,7 @@ class CodeGenerator:
         if node.orelse:
             self.visit(node.orelse)
         self.nextBlock(after)
+        self.scope = prev_scope
 
     def visitAsyncFor(self, node):
         start = self.newBlock()
@@ -747,6 +764,7 @@ class CodeGenerator:
         frees = gen.scope.get_free_vars()
         if frees:
             for name in frees:
+                name = self.query_alt_name(name)
                 self.emit('LOAD_CLOSURE', name)
             self.emit('BUILD_TUPLE', len(frees))
             self.emit('LOAD_CONST', gen)

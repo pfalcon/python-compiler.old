@@ -484,12 +484,23 @@ class SymbolVisitor:
 
     # operations that bind new names
 
-    def visitFor(self, node, scope):
-        self.visit(node.target, scope, 1)
+    def visitFor(self, node, parent):
+        scope = BlockScope("<for>", self.module, self.klass, lineno=node.lineno)
+        scope.parent = parent
+        if isinstance(parent, BlockScope):
+            scope.func_parent = parent.func_parent
+        else:
+            scope.func_parent = parent
+        if parent.nested or isinstance(parent, FunctionScope):
+            scope.nested = 1
+        self.scopes[node] = scope
+
+        self.visit(node.target, scope, 1, True)
         self.visit(node.iter, scope)
         self.visit(node.body, scope)
         if node.orelse:
             self.visit(node.orelse, scope)
+        self.handle_free_vars(scope, parent)
 
     visitAsyncFor = visitFor
 
