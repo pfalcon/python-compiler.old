@@ -258,7 +258,11 @@ class ClassScope(Scope):
 class SymbolVisitor:
     def __init__(self):
         self.scopes = {}
+        self.module = None
         self.klass = None
+
+    def dump_scopes(self):
+        self.module.dump_recursive()
 
     # node that define new scopes
 
