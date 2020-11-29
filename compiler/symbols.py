@@ -17,6 +17,9 @@ if VERSION >= 3:
 MANGLE_LEN = 256
 
 class Scope:
+
+    alt_name_cnt = 1
+
     # XXX how much information do I need about each name?
     def __init__(self, name, module, klass=None, lineno=0):
         self.name = name
@@ -55,8 +58,15 @@ class Scope:
             return name
         return mangle(name, self.klass)
 
+    def make_alt_name(self, name):
+        assert name in self.defs
+        alt_name = "%s.%d" % (name, self.__class__.alt_name_cnt)
+        self.defs[name] = alt_name
+        self.__class__.alt_name_cnt += 1
+        return alt_name
+
     def add_def(self, name):
-        self.defs[self.mangle(name)] = 1
+        self.defs[self.mangle(name)] = self.mangle(name)
 
     def add_use(self, name):
         self.uses[self.mangle(name)] = 1
@@ -198,7 +208,9 @@ class Scope:
                 elif sc == SC_GLOBAL_IMPLICIT:
                     child_globals.append(name)
                 elif isinstance(self, FunctionScope) and sc == SC_LOCAL:
-                    self.cells[name] = 1
+                    self.cells[name] = self.defs[name]
+                    if isinstance(self, BlockScope):
+                        self.func_parent.cells[self.defs[name]] = 1
                 elif sc != SC_CELL:
                     child_globals.append(name)
             else:
@@ -222,6 +234,9 @@ class ModuleScope(Scope):
         self.__super_init("global", self, lineno=0)
 
 class FunctionScope(Scope):
+    pass
+
+class BlockScope(FunctionScope):
     pass
 
 class GenExprScope(FunctionScope):
@@ -424,9 +439,15 @@ class SymbolVisitor:
     # true if the name is being used as an assignment.  only
     # expressions contained within statements may have the assign arg.
 
-    def visitName(self, node, scope, assign=0):
+    def visitName(self, node, scope, assign=0, block_scope=False):
         if assign or isinstance(node.ctx, ast.Store):
             scope.add_def(node.id)
+            if block_scope:
+                assert isinstance(scope, BlockScope)
+                alt_name = scope.make_alt_name(scope.mangle(node.id))
+            else:
+                if isinstance(scope, BlockScope):
+                    scope.func_parent.add_def(node.id)
         elif isinstance(node.ctx, ast.Del):
             # We do something to var, so even if we "undefine" it, it's a def.
             # Implementation-wise, delete is storing special value (usually
