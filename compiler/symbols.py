@@ -96,7 +96,7 @@ class Scope:
     def get_children(self):
         return self.children
 
-    def DEBUG(self):
+    def dump(self):
         print(self.name, self.nested and "nested" or "")
         print("\tglobals: ", self.globals)
         print("\texplicit_globals: ", self.explicit_globals)
@@ -104,6 +104,15 @@ class Scope:
         print("\tdefs: ", self.defs)
         print("\tuses: ", self.uses)
         print("\tfrees:", self.frees)
+
+    # Legacy method name from the original Python2 module,
+    # for backward compatibility.
+    DEBUG = dump
+
+    def dump_recursive(self):
+        self.dump()
+        for s in self.children:
+            s.dump_recursive()
 
     def check_name(self, name):
         """Return scope of name.
