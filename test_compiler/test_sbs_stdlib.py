@@ -60,3 +60,6 @@ def add_test(modname, fname):
 
 LIB_PATH = path.dirname(dis.__file__)
 glob_test(LIB_PATH, "**/*.py", add_test)
+
+LIB_PATH = path.dirname(path.dirname(__file__))
+glob_test(LIB_PATH, "**/testcorpus/*.py", add_test)
